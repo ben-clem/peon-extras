@@ -3,8 +3,8 @@
 Next session: turn the working laptop install into something a second Mac can install, and
 that this Mac can repair after `brew upgrade peon-ping`.
 
-Do **not** treat this file as the product. It is a pointer. The scripts alongside it in `~/.
-cursor/peon-extras/` are the source of truth. Copy those files; do not paste them into
+Do **not** treat this file as the product. It is a pointer. The scripts alongside it in
+`~/.cursor/peon-extras/` are the source of truth. Copy those files; do not paste them into
 markdown. This file ships with them into the repo.
 
 ## Recommendation (already decided in conversation)
@@ -30,7 +30,7 @@ User is happy with the overlay. Visual lock:
 - Row gap `10` (upstream `2`)
 - Icon-to-text `textX = 10 + iconSize + 16` (upstream `+ 5`)
 - Title and excerpt **left-aligned** (upstream centered)
-- Row 1: `📁 <workspace> 💬 <chat-title>`
+- Row 1: `📂 <workspace> 💬 <chat-title>`
 - Row 2: first non-empty line of the assistant response (not a later "substantial" line).
   Exception: `precompact` uses the summarize usage line below.
 - `precompact` before: `Summarizing: ~287.1K / 300K Tokens (96% Full)`
@@ -271,17 +271,3 @@ mac-overlay.js, Cursor notification banner customizations.
 
 Grill remaining product choices in the next session (do not invent here): private vs public
 github, Homebrew tap vs clone+script, whether `peasant_fr` install is in-scope.
-
-## Suggested skills
-
-* `/create-skill` - author `SKILL.md` for install/repair.
-* `/writing-for-agents` - keep the skill as steps + completion criteria; pointer to scripts,
-not inlined copies.
-* `/grill-me` - remaining packaging decisions (hosting, public/private, second-laptop
-constraints).
-* `/new-repo` - only if creating a Cursor-hosted or github repo
-in-session.
-* `/wizard` - only if the second laptop needs human steps (Homebrew, github auth) the agent
-cannot do.
-
-Default: personal skill + personal repo.
