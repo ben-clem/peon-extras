@@ -83,9 +83,7 @@ for name in "${RUNTIME_FILES[@]}"; do
     cp "$src" "$DEST/$name"
   fi
 done
-if [ -f "$REPO_DIR/HANDOFF.md" ] && [ "$REPO_DIR/HANDOFF.md" != "$DEST/HANDOFF.md" ]; then
-  cp "$REPO_DIR/HANDOFF.md" "$DEST/HANDOFF.md"
-fi
+rm -f "$DEST/HANDOFF.md"
 chmod +x \
   "$DEST/build-large-overlay.py" \
   "$DEST/capture-response.py" \
@@ -185,16 +183,20 @@ print("wrote", hooks_path)
 PY
 
 echo "== merge peon-ping config.json =="
-python3 - "$CONFIG_JSON" <<'PY'
+python3 - "$CONFIG_JSON" "$DEST" <<'PY'
 import json, os, sys
 
 path = sys.argv[1]
+dest = sys.argv[2]
 with open(path) as handle:
     data = json.load(handle)
 if not isinstance(data, dict):
     raise SystemExit("config.json is not an object")
 
-data["notification_title_script"] = "cursor-notification-title.py"
+# peon.sh runs this with shell=True from the workspace, not $PEON_DIR/scripts.
+# A bare filename is "command not found" and the banner falls back to the repo name.
+title_script = os.path.join(dest, "cursor-notification-title.py")
+data["notification_title_script"] = "python3 {}".format(json.dumps(title_script))
 data["notification_title_marker"] = " > "
 data["notification_dismiss_seconds"] = 30
 data["overlay_theme"] = "neon"
@@ -213,6 +215,7 @@ if not isinstance(categories, dict):
     categories = {}
 # peon.sh reads dotted CESP keys (cats.get("task.acknowledge")), not nested
 # dicts. Nested task/acknowledge is ignored and submit stays silent.
+categories["session.start"] = True
 categories["task.acknowledge"] = True
 categories["resource.limit"] = True
 categories.pop("task", None)
@@ -313,6 +316,7 @@ print("overlay_theme:", cfg.get("overlay_theme"))
 print("volume:", cfg.get("volume"))
 print("suppress_subagent_complete:", cfg.get("suppress_subagent_complete"))
 print("default_pack:", cfg.get("default_pack"))
+print("categories.session.start:", (cfg.get("categories") or {}).get("session.start"))
 print("categories.task.acknowledge:", (cfg.get("categories") or {}).get("task.acknowledge"))
 print("categories.resource.limit:", (cfg.get("categories") or {}).get("resource.limit"))
 PY

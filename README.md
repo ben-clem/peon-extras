@@ -23,4 +23,4 @@ The generated overlay also works around a macOS 26 bug: JXA's
 never appears. The generator replaces it with a plain event loop.
 
 Agent entry point: `skill/SKILL.md` (copied to `~/.cursor/skills/peon-extras/`).
-Why the wrappers exist: `HANDOFF.md`.
+Preferred settings and wrapper seams live there. `./install.sh` reapplies them.

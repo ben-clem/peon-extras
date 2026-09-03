@@ -25,7 +25,7 @@ wrappers to "simplify" them.
 
 ## Install / repair
 
-1. Work from the git clone of this repo (not a megahandoff paste).
+1. Work from the git clone of this repo.
 2. Confirm `peon-ping` is installed (`brew --prefix peon-ping`) and
    `~/.claude/hooks/peon-ping/peon.sh` exists. If `peon.sh` is missing, tell the
    human to run `peon-ping-setup`, then re-run the installer. Do not invent a
@@ -45,8 +45,10 @@ Print and satisfy all of:
 
 - `~/.claude/hooks/peon-ping/scripts/notify.sh` → `notify-banner-title.sh`
 - `~/.claude/hooks/peon-ping/scripts/mac-overlay.js` → `mac-overlay-large.js`
-- `notification_title_script` is `cursor-notification-title.py` (filename plus
-  a symlink under `$PEON_DIR/scripts/`)
+- `notification_title_script` is an absolute `python3 …/cursor-notification-title.py`
+  command. peon.sh runs it with `shell=True` from the workspace; a bare
+  filename is `command not found` and the banner falls back to the git repo
+  name with no `📂` / `💬`.
 - User hooks (`~/.cursor/hooks.json`, version 1) register:
   - `beforeSubmitPrompt` → `peon.sh` only (no title-capture wrapper)
   - `afterAgentResponse` → `capture-response.py` (cache only, no sound)
@@ -54,13 +56,15 @@ Print and satisfy all of:
   - `postToolUseFailure` → `peon.sh`
   - `preCompact` → `precompact.py` (never `peon.sh` directly)
 - No peon commands on `sessionStart`, `sessionStop`, `subagentStart`,
-  `subagentStop`. Drop them if `peon-ping-setup` added them back.
+  `subagentStop`. Drop them if `peon-ping-setup` added them back. Cursor fires
+  `sessionStart` in the same millisecond as the first `beforeSubmitPrompt`, so
+  both sounds play. Leave `categories.session.start` true for other adapters.
 - `node --check` on the generated overlay succeeds.
 - `peasant_fr` is installed and selected (`peon packs use peasant_fr`);
   `default_pack` is `peasant_fr`.
-- `config.json` `categories` uses dotted CESP keys: `task.acknowledge` and
-  `resource.limit` are `true`. Nested `categories.task.acknowledge` is ignored
-  by `peon.sh` and leaves submit silent.
+- `config.json` `categories` uses dotted CESP keys: `session.start`,
+  `task.acknowledge`, and `resource.limit` are `true`. Nested
+  `categories.task.acknowledge` is ignored by `peon.sh` and leaves submit silent.
 - Submit is **sound only** (`task.acknowledge`). Banners fire on `stop` and
   `preCompact`, not on `beforeSubmitPrompt`.
 - The generated overlay contains no `ObjC.registerSubclass` (`grep -c` is 0).
@@ -69,6 +73,25 @@ Print and satisfy all of:
   generator swaps in a hand-pumped event loop and a `/tmp/peon-ping-popups/
   .dismiss-*` marker for sibling dismissal. Symptom to recognise: sounds play,
   no banner, `osascript ... mac-overlay.js` processes alive at high CPU.
+
+## Settings lock
+
+These are the preferred settings. `./install.sh` reapplies the config and hook
+ones. Script constants live in the named file. Do not revert them to upstream
+defaults.
+
+- Overlay `650x100`, icon `72`, title font `18`, excerpt font `14`, gap `10`,
+  icon-to-text `+16`, left-aligned: `build-large-overlay.py`
+- Title `📂 workspace 💬 chat-title`, ASCII fallback `workspace > chat-title`:
+  `cursor-notification-title.py`
+- Stop body: first non-empty line of the assistant reply, max 160 chars:
+  `capture-response.py`
+- Summarize copy `Summarizing:` / `Done summarizing:` plus K-format
+  (`287.1K / 300K Tokens (96% Full)`): `_usage.py`
+- `overlay_theme` neon, `default_pack` / selected pack `peasant_fr`, volume
+  `0.25`, dismiss `30` seconds, stop template `{summary}`
+- Cursor finish chime off:
+  `cursor.composer.shouldChimeAfterChatFinishes: false`
 
 ## Two wrapper seams (do not remove)
 
@@ -113,7 +136,15 @@ unavailable.
 
 ## Testing summarize without a live session
 
-Do not burn a real chat. Point `CURSOR_STATE_DB` at a throwaway SQLite file as
-described in `HANDOFF.md`. Watcher pass condition: `cache/summarize-watch-<id>`
-disappears. That exercises logic, not pixels; only a real `/summarize` proves
-the banner on screen.
+Do not burn a real chat. Point `CURSOR_STATE_DB` at a throwaway SQLite file.
+
+1. Create `composerHeaders(composerId, value, lastUpdatedAt)` with one row
+   whose JSON `value` has `name` and `contextUsagePercent`.
+2. Pipe a synthetic `precompact` payload with `context_tokens`,
+   `context_window_size`, and `context_usage_percent` into `precompact.py`.
+3. Wait a few seconds, then `UPDATE` the row to a lower percent.
+4. Pass: `cache/summarize-watch-<id>` disappears after the after-banner.
+5. Delete that fake id's cache entries.
+
+This exercises the logic, not the display. Only a real `/summarize` proves the
+banner on screen.
