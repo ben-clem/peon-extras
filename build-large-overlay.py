@@ -2,9 +2,11 @@
 """Regenerate the enlarged copy of peon-ping's macOS overlay.
 
 peon-ping hard-codes the banner geometry, so this re-applies the size patch to
-whatever version Homebrew currently ships. Run it after `brew upgrade
-peon-ping`; it refuses to write anything if upstream changed the lines it
-patches, rather than emitting a half-patched overlay.
+whatever version Homebrew currently ships. It also removes upstream's
+ObjC.registerSubclass calls, which hang forever on macOS 26 (see the comment
+in REPLACEMENTS). Run it after `brew upgrade peon-ping`; it refuses to write
+anything if upstream changed the lines it patches, rather than emitting a
+half-patched overlay.
 """
 
 import sys
@@ -43,6 +45,168 @@ REPLACEMENTS = (
     (
         "subLabel.setAlignment($.NSTextAlignmentCenter);",
         "subLabel.setAlignment($.NSTextAlignmentLeft);",
+    ),
+    # Let the banner sit above a fullscreen Cursor window too.
+    (
+        "    win.setCollectionBehavior(\n"
+        "      $.NSWindowCollectionBehaviorCanJoinAllSpaces |\n"
+        "      $.NSWindowCollectionBehaviorStationary\n"
+        "    );",
+        "    win.setCollectionBehavior(\n"
+        "      $.NSWindowCollectionBehaviorCanJoinAllSpaces |\n"
+        "      $.NSWindowCollectionBehaviorStationary |\n"
+        "      $.NSWindowCollectionBehaviorFullScreenAuxiliary\n"
+        "    );",
+    ),
+    # --- No ObjC.registerSubclass -------------------------------------------
+    # On macOS 26 (seen on 26.6.2, Intel) JXA's ObjC.registerSubclass never
+    # returns: libffi cannot allocate an executable closure and spins forever in
+    # its temp-file fallback (`sample` shows ffi_closure_alloc -> dlmmap ->
+    # open_temp_exec_file_dir at ~65% CPU). Upstream registers two subclasses
+    # before NSApp.run, so the banner is never drawn and each attempt burns CPU
+    # until notify.sh's watchdog kills it. The patches below keep the same
+    # behaviour without any subclass: the click handler becomes a plain JS
+    # function invoked from a hand-pumped event loop, and sibling overlays
+    # (one process per screen) coordinate dismissal through a marker file
+    # instead of a distributed-notification observer.
+    (
+        "ObjC.import('Cocoa');",
+        "ObjC.import('Cocoa');\nObjC.import('unistd');",
+    ),
+    (
+        "  var dismissNotificationName = 'com.peonping.dismiss.' + slot;",
+        "  var dismissNotificationName = 'com.peonping.dismiss.' + slot;\n"
+        "  // Sibling overlays share a parent (notify.sh spawns one per screen), so\n"
+        "  // slot + ppid names a marker only this notification's processes read.\n"
+        "  var peonMarkerDir = '/tmp/peon-ping-popups';\n"
+        "  var peonParent = '';\n"
+        "  try { peonParent = String($.getppid()); } catch (e) { peonParent = ''; }\n"
+        "  var peonMarkerPath = peonMarkerDir + '/.dismiss-' + slot + '-' + peonParent;\n"
+        "  function peonMarkerAge() {\n"
+        "    var attrs = $.NSFileManager.defaultManager.attributesOfItemAtPathError($(peonMarkerPath), $());\n"
+        "    if (!attrs || attrs.isNil()) return -1;\n"
+        "    var mod = attrs.objectForKey($('NSFileModificationDate'));\n"
+        "    if (!mod || mod.isNil()) return -1;\n"
+        "    return -mod.timeIntervalSinceNow;\n"
+        "  }\n"
+        "  function peonSignalSiblings() {\n"
+        "    $.NSFileManager.defaultManager.createDirectoryAtPathWithIntermediateDirectoriesAttributesError($(peonMarkerDir), true, $(), $());\n"
+        "    $.NSString.stringWithString('1').writeToFileAtomically($(peonMarkerPath), true);\n"
+        "  }\n"
+        "  // Markers left behind by earlier notifications must not dismiss us, and\n"
+        "  // nobody else cleans them up, so sweep the stale ones here.\n"
+        "  (function peonSweepMarkers() {\n"
+        "    var fm = $.NSFileManager.defaultManager;\n"
+        "    var names = fm.contentsOfDirectoryAtPathError($(peonMarkerDir), $());\n"
+        "    if (!names || names.isNil()) return;\n"
+        "    for (var ni = 0; ni < names.count; ni++) {\n"
+        "      var name = ObjC.unwrap(names.objectAtIndex(ni));\n"
+        "      if (name.indexOf('.dismiss-') !== 0) continue;\n"
+        "      var full = peonMarkerDir + '/' + name;\n"
+        "      var attrs = fm.attributesOfItemAtPathError($(full), $());\n"
+        "      if (!attrs || attrs.isNil()) continue;\n"
+        "      var mod = attrs.objectForKey($('NSFileModificationDate'));\n"
+        "      if (mod && !mod.isNil() && -mod.timeIntervalSinceNow > 3) fm.removeItemAtPathError($(full), $());\n"
+        "    }\n"
+        "  })();",
+    ),
+    (
+        "    ObjC.registerSubclass({\n"
+        "      name: 'PeonClickHandler',\n"
+        "      superclass: 'NSObject',\n"
+        "      methods: {\n"
+        "        'handleClick:': {\n"
+        "          types: ['void', ['id']],\n"
+        "          implementation: function(_sender) {",
+        "    var peonHandleClick = function(_sender) {",
+    ),
+    (
+        "          }\n"
+        "        }\n"
+        "      }\n"
+        "    });\n"
+        "    clickHandler = $.PeonClickHandler.alloc.init;",
+        "    };\n"
+        "    clickHandler = { handleClick: peonHandleClick };",
+    ),
+    (
+        "              runCmuxFocusTask();\n"
+        "              $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);",
+        "              runCmuxFocusTask();\n"
+        "              peonSignalSiblings();\n"
+        "              $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);",
+    ),
+    (
+        "            // Signal ALL sibling overlays to dismiss (event-driven, no polling)\n"
+        "            $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);",
+        "            // Signal ALL sibling overlays to dismiss (event-driven, no polling)\n"
+        "            peonSignalSiblings();\n"
+        "            $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);",
+    ),
+    # NSButton needs an ObjC target; clicks are caught in the event loop instead.
+    (
+        "      // Transparent click-capture button (added last so it sits on top)\n"
+        "      var btn = $.NSButton.alloc.initWithFrame($.NSMakeRect(0, 0, winWidth, winHeight));\n"
+        "      btn.setTitle($(''));\n"
+        "      btn.setBordered(false);\n"
+        "      btn.setTransparent(true);\n"
+        "      btn.setTarget(clickHandler);\n"
+        "      btn.setAction('handleClick:');\n"
+        "      contentView.addSubview(btn);",
+        "      // Clicks are picked up by the event loop below; no target/action needed.",
+    ),
+    (
+        "  // Event-driven dismissal: observe distributed notifications from sibling overlays\n"
+        "  // No polling! All overlays with the same slot will dismiss when any one is clicked.\n"
+        "  ObjC.registerSubclass({\n"
+        "    name: 'PeonDismissObserver',\n"
+        "    superclass: 'NSObject',\n"
+        "    methods: {\n"
+        "      'handleDismiss:': {\n"
+        "        types: ['void', ['id']],\n"
+        "        implementation: function(notification) {\n"
+        "          $.NSApp.terminate(null);\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "  });\n"
+        "  var observer = $.PeonDismissObserver.alloc.init;\n"
+        "  $.NSDistributedNotificationCenter.defaultCenter.addObserverSelectorNameObject(\n"
+        "    observer,\n"
+        "    'handleDismiss:',\n"
+        "    $(dismissNotificationName),\n"
+        "    $.NSString.string\n"
+        "  );\n"
+        "\n"
+        "  $.NSApp.run;",
+        "  // Hand-pumped event loop (replaces NSApp.run + the dismiss observer).\n"
+        "  // A left-mouse-up on one of our windows runs the click handler; a fresh\n"
+        "  // marker written by a sibling ends this process too. The upstream\n"
+        "  // auto-dismiss NSTimer above still fires from inside nextEvent, and the\n"
+        "  // JS deadline is the fallback if it does not.\n"
+        "  var peonWindowNumbers = {};\n"
+        "  for (var wi = 0; wi < windows.length; wi++) peonWindowNumbers[windows[wi].windowNumber] = true;\n"
+        "  var peonDeadline = dismiss > 0 ? Date.now() + dismiss * 1000 : Infinity;\n"
+        "  $.NSApp.finishLaunching;\n"
+        "  while (Date.now() < peonDeadline) {\n"
+        "    var ev = $.NSApp.nextEventMatchingMaskUntilDateInModeDequeue(\n"
+        "      0xFFFFFFFF, $.NSDate.dateWithTimeIntervalSinceNow(0.25), $.NSDefaultRunLoopMode, true\n"
+        "    );\n"
+        "    if (ev && !ev.isNil()) {\n"
+        "      var evWin = ev.window;\n"
+        "      if (clickHandler && ev.type === $.NSEventTypeLeftMouseUp &&\n"
+        "          evWin && !evWin.isNil() && peonWindowNumbers[evWin.windowNumber]) {\n"
+        "        clickHandler.handleClick(null);\n"
+        "        // handleClick schedules terminate: in 50ms; cap the loop in case it never fires.\n"
+        "        peonDeadline = Math.min(peonDeadline, Date.now() + 500);\n"
+        "        continue;\n"
+        "      }\n"
+        "      $.NSApp.sendEvent(ev);\n"
+        "    }\n"
+        "    var peonAge = peonMarkerAge();\n"
+        "    if (peonAge >= 0 && peonAge < 3) break;\n"
+        "  }\n"
+        "  $.NSApp.terminate(null);",
     ),
 )
 

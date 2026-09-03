@@ -60,8 +60,9 @@ All under `~/.cursor/peon-extras/` except generated overlay and cache:
 | `precompact.py` | `precompact` hook: cache before-line from payload, spawn watcher, then
   `peon.sh` (sound) |
 | `_usage.py` | K-format (`287.1K` / `300K`) and read-only `contextUsagePercent` |
-| `build-large-overlay.py` | **Generator:** Re-applies the eight overlay patches; **abort if a pattern is
-  not unique** |
+| `build-large-overlay.py` | **Generator:** Re-applies the overlay geometry patches and removes
+  upstream's `ObjC.registerSubclass` calls (they hang forever on macOS 26, so no banner ever
+  draws); **abort if a pattern is not unique** |
 
 ```
 
@@ -284,11 +285,3 @@ in-session.
 cannot do.
 
 Default: personal skill + personal repo.
-
-## Prior conversation
-
-Cursor local transcript: [Peonping installation in Cursor]
-(fee8a6fb-229d-4a26-aafb-57323eac1d918)
-
-SQLite pattern (read-only `state.vscdb`): [Access to previous Cursor agent chats]
-(232a1555-7333-4656-b388-be63ad4fc490)

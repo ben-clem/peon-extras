@@ -84,10 +84,10 @@ def usage_percent_from_db(conversation_id):
             'SELECT value FROM "composerHeaders" WHERE "composerId"=?',
             (conversation_id,),
         ).fetchone()
-    except sqlite3.Error:
-        return None
         if not row:
             return None
         return _percent_from_record(parse_json(row[0]))
+    except sqlite3.Error:
+        return None
     finally:
         connection.close()
