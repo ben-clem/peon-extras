@@ -96,9 +96,11 @@ defaults.
 
 ## Two wrapper seams (do not remove)
 
-1. **Title:** `peon.sh` sanitizes the project label to `[A-Za-z0-9 _.,-]`, so
-   emoji and `>` never reach the overlay. `cursor-notification-title.py`
-   prints the `>` form and caches match/emoji/fallback.
+1. **Title:** `peon.sh` sanitizes the project label to `[A-Za-z0-9 ._-]`, so
+   emoji, `>`, and commas never reach the overlay. `cursor-notification-title.py`
+   prints the `>` form and caches match/emoji/fallback. Cloud agent chats
+   (ids starting `bc-`) are not `composerHeaders` rows; their name is on
+   `cloudAgentRepository.agents.*` in `ItemTable`.
    `notify-banner-title.sh` restores emoji only when `$2` equals that cached
    sanitized match or the `>` fallback. Leave `peon-ping-rename`, `peon-label`,
    and `CLAUDE_SESSION_NAME` alone. Before `exec`, it also rewrites the count
