@@ -1,7 +1,8 @@
 #!/bin/bash
 # Installed as ~/.claude/hooks/peon-ping/scripts/notify.sh, which peon.sh prefers
-# over the packaged copy. peon.sh strips emoji from the banner title, so restore
-# the cached emoji title before delegating to the real notifier.
+# over the packaged copy. Restores the cached emoji title, swaps the stock
+# PreCompact body, and zeros the session stacking count so a second banner
+# within 30s still replaces the live overlay without a "(N)" prefix.
 # Restore the stock behaviour with:
 #   ln -sfn /opt/homebrew/opt/peon-ping/libexec/scripts/notify.sh \
 #     ~/.claude/hooks/peon-ping/scripts/notify.sh
@@ -69,6 +70,22 @@ if [ "$new_msg" = "compacting: Context compacting" ]; then
     new_msg="$compact_body"
   else
     new_msg="Summarizing this chat now"
+  fi
+fi
+
+# The packaged notify.sh prepends a "(N)" badge to both the title and the body
+# once two notifications share a session, and with notification_dismiss_seconds
+# at 30 that happens often. Resetting only the count field keeps the slot and
+# pid fields, so the delegate still replaces the live overlay and still
+# auto-dismisses on resume.
+if [ -n "${PEON_SESSION_ID:-}" ] && [ "$safe_id" = "$PEON_SESSION_ID" ]; then
+  stack_file="/tmp/peon-ping-popups/.session-${PEON_SESSION_ID}"
+  if [ -f "$stack_file" ]; then
+    IFS='|' read -r stack_slot stack_pids _ < "$stack_file" || true
+    case "$stack_slot" in
+      *[!0-9]*) ;;
+      *) printf "%s|%s|0\n" "$stack_slot" "$stack_pids" > "$stack_file" || true ;;
+    esac
   fi
 fi
 

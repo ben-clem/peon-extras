@@ -19,6 +19,7 @@ from _cache import CACHE_DIR, cache_path, prune_stale_entries
 
 MAX_TITLE_CHARS = 50
 MAX_WORKSPACE_CHARS = 20
+HOME_WORKSPACE_LABEL = "Home"
 PLAIN_SEPARATOR = " > "
 BANNER_FORMAT = "\U0001f4c2 {} \U0001f4ac {}"
 PEON_TITLE_CHARS = re.compile(r"[^A-Za-z0-9 _.,-]")
@@ -215,10 +216,24 @@ def clear_banner_title(conversation_id):
         pass
 
 
+def workspace_label(cwd):
+    """Name the folder holding the chat, or 'Home' when there is no project.
+
+    Cursor reports an empty cwd for a window opened without a folder, and peon.sh
+    answers that with a hardcoded 'claude'; naming it keeps the banner readable.
+    """
+    if not cwd:
+        return HOME_WORKSPACE_LABEL
+    path = os.path.normpath(cwd)
+    if path == os.path.normpath(os.path.expanduser("~")):
+        return HOME_WORKSPACE_LABEL
+    return os.path.basename(path)
+
+
 def main():
     conversation_id = clean_label(os.environ.get("PEON_SESSION_ID"))
     cwd = clean_label(os.environ.get("PEON_CWD"))
-    workspace = os.path.basename(os.path.normpath(cwd)) if cwd else ""
+    workspace = workspace_label(cwd)
     parts = title_parts(workspace, cursor_chat_title(conversation_id))
     if not parts:
         clear_banner_title(conversation_id)

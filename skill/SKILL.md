@@ -82,7 +82,8 @@ defaults.
 
 - Overlay `650x100`, icon `72`, title font `18`, excerpt font `14`, gap `10`,
   icon-to-text `+16`, left-aligned: `build-large-overlay.py`
-- Title `📂 workspace 💬 chat-title`, ASCII fallback `workspace > chat-title`:
+- Title `📂 workspace 💬 chat-title`, ASCII fallback `workspace > chat-title`.
+  Empty-window and `$HOME` cwd use workspace `Home`:
   `cursor-notification-title.py`
 - Stop body: first non-empty line of the assistant reply, max 160 chars:
   `capture-response.py`
@@ -100,7 +101,11 @@ defaults.
    prints the `>` form and caches match/emoji/fallback.
    `notify-banner-title.sh` restores emoji only when `$2` equals that cached
    sanitized match or the `>` fallback. Leave `peon-ping-rename`, `peon-label`,
-   and `CLAUDE_SESSION_NAME` alone.
+   and `CLAUDE_SESSION_NAME` alone. Before `exec`, it also rewrites the count
+   field in `/tmp/peon-ping-popups/.session-<id>` to `0` when the slot is
+   numeric. The delegate still reuses the slot and kills the live overlay;
+   `count` stays `1`, so it skips the `(N)` prefix on title and body. Keep
+   stacking on and dismiss at 30 seconds.
 2. **Overlay file:** PeonPing prefers `$PEON_DIR/scripts/mac-overlay.js` over
    the Homebrew copy. That path is a symlink to the generated
    `mac-overlay-large.js`. Rebuild after every upgrade; abort if a replacement
