@@ -22,7 +22,9 @@ MAX_WORKSPACE_CHARS = 20
 HOME_WORKSPACE_LABEL = "Home"
 PLAIN_SEPARATOR = " > "
 BANNER_FORMAT = "\U0001f4c2 {} \U0001f4ac {}"
-PEON_TITLE_CHARS = re.compile(r"[^A-Za-z0-9 _.,-]")
+# Match peon.sh's final project sanitizer (`[^a-zA-Z0-9 ._-]`). A looser set
+# (comma, etc.) makes the notify wrapper miss $2 and skip the emoji title.
+PEON_TITLE_CHARS = re.compile(r"[^A-Za-z0-9 ._-]")
 STATE_DB = Path(
     os.environ.get(
         "CURSOR_STATE_DB",
@@ -145,6 +147,35 @@ def title_from_key_value_tables(connection, conversation_id):
     return ""
 
 
+def title_from_cloud_agents(connection, conversation_id):
+    """Cloud agent chats are not composerHeaders rows; names live on ItemTable."""
+    for table in ("ItemTable", "cursorDiskKV"):
+        columns = table_columns(connection, table)
+        if not {"key", "value"}.issubset(columns):
+            continue
+        try:
+            rows = connection.execute(
+                'SELECT value FROM "{}" WHERE key LIKE ?'.format(table),
+                ("cloudAgentRepository.agents.%",),
+            ).fetchall()
+        except sqlite3.Error:
+            continue
+        for (value,) in rows:
+            payload = parse_json(value)
+            if not isinstance(payload, list):
+                continue
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                agent_id = clean_label(item.get("bcId") or item.get("id"))
+                if agent_id != conversation_id:
+                    continue
+                title = clean_label(item.get("name") or item.get("title"))
+                if title:
+                    return title
+    return ""
+
+
 def cursor_chat_title(conversation_id):
     if not conversation_id or not STATE_DB.is_file():
         return ""
@@ -156,9 +187,11 @@ def cursor_chat_title(conversation_id):
         return ""
     try:
         connection.execute("PRAGMA query_only=ON")
-        return title_from_headers_table(
-            connection, conversation_id
-        ) or title_from_key_value_tables(connection, conversation_id)
+        return (
+            title_from_headers_table(connection, conversation_id)
+            or title_from_key_value_tables(connection, conversation_id)
+            or title_from_cloud_agents(connection, conversation_id)
+        )
     finally:
         connection.close()
 
