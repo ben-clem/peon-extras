@@ -26,12 +26,14 @@ flow casually.
    both agents.
 4. If `build-large-overlay.py` exits nonzero, stop. Upstream changed a patched
    line. Do not hand-edit a partial `mac-overlay.js`.
-5. After Codex hook changes, run `codex` in a terminal, enter `/hooks` in the
-   Codex CLI, and trust the user hooks. The Codex Desktop composer does not
-   resolve `/hooks`. Restart Codex Desktop after trusting the hooks. Non-managed
-   hooks do not run until reviewed. If `codex` is missing from `PATH`, use the
-   bundled `/Applications/ChatGPT.app/Contents/Resources/codex` when present,
-   or follow OpenAI's official CLI installation instructions.
+5. When the installer reports that Codex hook definitions changed, run `codex`
+   in a terminal, enter `/hooks`, and trust the new or changed user hooks. The
+   Codex Desktop composer does not resolve `/hooks`. Runtime-only updates keep
+   the existing hook definition hash, apply immediately, and need no restart.
+   If Desktop does not pick up a newly trusted definition, restart it. If
+   `codex` is missing from `PATH`, use the bundled
+   `/Applications/ChatGPT.app/Contents/Resources/codex` when present, or follow
+   OpenAI's official CLI installation instructions.
 6. Ignore PeonPing's `detected (not set up)` Codex status when the user hooks
    below are present. Its detector searches only `config.toml`. Do not add a
    legacy `notify` callback to satisfy that detector; it duplicates completion
@@ -162,7 +164,7 @@ node --check mac-overlay-large.js
 
 The generated overlay exists only after the installer runs.
 
-For a live Codex check after restart and hook trust:
+For a live Codex check after any required hook trust:
 
 1. Submit a prompt and confirm the acknowledgement sound has no banner.
 2. Trigger a `request_user_input` question and confirm a blue question banner.

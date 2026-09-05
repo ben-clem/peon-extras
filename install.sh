@@ -195,7 +195,13 @@ print("wrote", hooks_path)
 PY
 
 echo "== merge Codex hooks.json =="
-python3 "$DEST/install_codex_hooks.py" "$CODEX_HOOKS_JSON" "$DEST"
+CODEX_HOOKS_RESULT="$(python3 "$DEST/install_codex_hooks.py" "$CODEX_HOOKS_JSON" "$DEST")"
+echo "$CODEX_HOOKS_RESULT"
+case "$CODEX_HOOKS_RESULT" in
+  wrote\ *) CODEX_HOOKS_CHANGED=true ;;
+  unchanged\ *) CODEX_HOOKS_CHANGED=false ;;
+  *) die "unexpected Codex hook installer result: $CODEX_HOOKS_RESULT" ;;
+esac
 python3 - "$CODEX_CONFIG_TOML" <<'PY'
 import os, sys
 
@@ -370,5 +376,11 @@ if ! command -v codex >/dev/null 2>&1; then
     fi
   done
 fi
-echo "Codex: run '$codex_cli' in a terminal, enter /hooks, trust the user hooks, then restart Codex Desktop."
+if [ "$CODEX_HOOKS_CHANGED" = true ]; then
+  echo "Codex hooks changed: run '$codex_cli' in a terminal, enter /hooks, and trust the new or changed user hooks."
+  echo "Restart Codex Desktop only if it does not pick up the trusted hooks."
+else
+  echo "Codex hook definitions unchanged; existing trust remains valid."
+  echo "Runtime updates are active immediately; no Codex restart is needed."
+fi
 echo "install/repair complete."

@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -217,6 +218,33 @@ class CodexHookTests(unittest.TestCase):
 
 
 class CodexHookInstallerTests(unittest.TestCase):
+    def test_main_skips_unchanged_hook_definitions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            hooks_path = Path(directory, "hooks.json")
+            first_output = io.StringIO()
+            with redirect_stdout(first_output):
+                self.assertEqual(
+                    install_codex_hooks.main(
+                        ["install_codex_hooks.py", str(hooks_path), "/runtime"]
+                    ),
+                    0,
+                )
+            self.assertTrue(first_output.getvalue().startswith("wrote "))
+
+            second_output = io.StringIO()
+            with (
+                patch.object(install_codex_hooks, "write_atomic") as write_atomic,
+                redirect_stdout(second_output),
+            ):
+                self.assertEqual(
+                    install_codex_hooks.main(
+                        ["install_codex_hooks.py", str(hooks_path), "/runtime"]
+                    ),
+                    0,
+                )
+            write_atomic.assert_not_called()
+            self.assertTrue(second_output.getvalue().startswith("unchanged "))
+
     def test_merge_preserves_unrelated_rules_and_replaces_peon_rules(self):
         data = {
             "description": "mine",

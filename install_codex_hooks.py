@@ -100,7 +100,14 @@ def main(argv):
         print("usage: install_codex_hooks.py HOOKS_JSON RUNTIME_DIR", file=sys.stderr)
         return 2
     hooks_path, dest = argv[1], os.path.abspath(argv[2])
-    write_atomic(hooks_path, merge(load(hooks_path), dest))
+    data = load(hooks_path)
+    before = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    merged = merge(data, dest)
+    after = json.dumps(merged, sort_keys=True, separators=(",", ":"))
+    if before == after:
+        print("unchanged", hooks_path)
+        return 0
+    write_atomic(hooks_path, merged)
     print("wrote", hooks_path)
     return 0
 

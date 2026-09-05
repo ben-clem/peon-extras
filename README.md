@@ -40,10 +40,11 @@ The installer:
 - installs the maintenance skill for both Cursor and Codex;
 - rebuilds the macOS overlay and selects `peasant_fr`.
 
-After a Codex install, run `codex` in a terminal, enter `/hooks` in the Codex
-CLI, and trust the new user hooks. The Codex Desktop composer does not resolve
-`/hooks`. Restart Codex Desktop after trusting the hooks; Codex does not run
-unreviewed hooks.
+When the installer changes a Codex hook definition, run `codex` in a terminal,
+enter `/hooks`, and trust the new or changed user hooks. The Codex Desktop
+composer does not resolve `/hooks`. Codex records trust against the definition
+hash, so runtime-only updates keep existing trust and take effect without a
+restart. If Desktop does not pick up a newly trusted definition, restart it.
 
 If the shell cannot find `codex`, install the CLI using OpenAI's official
 instructions. Codex Desktop may also contain a bundled executable at
