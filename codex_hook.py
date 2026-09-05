@@ -18,6 +18,7 @@ PEON_SCRIPT = os.path.join(PEON_DIR, "peon.sh")
 CODEX_ADAPTER = os.path.join(PEON_DIR, "adapters", "codex.sh")
 TITLE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notification_title.py")
 MAX_TRANSCRIPT_TAIL = 8 * 1024 * 1024
+AUTO_REVIEWERS = {"auto_review", "guardian_subagent"}
 
 
 def clean_line(value, limit=160):
@@ -113,6 +114,32 @@ def latest_context_usage(path):
     return None
 
 
+def latest_approvals_reviewer(path):
+    if not path:
+        return None
+    for line in reversed(transcript_tail(path)):
+        try:
+            record = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if record.get("type") != "event_msg":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "thread_settings_applied":
+            continue
+        settings = payload.get("thread_settings")
+        if not isinstance(settings, dict):
+            continue
+        reviewer = clean_line(settings.get("approvals_reviewer"), 40)
+        return reviewer or None
+    return None
+
+
+def auto_review_handles_permission(event):
+    transcript_path = str(event.get("transcript_path") or "")
+    return latest_approvals_reviewer(transcript_path) in AUTO_REVIEWERS
+
+
 def write_compact_body(event):
     usage = latest_context_usage(str(event.get("transcript_path") or ""))
     body = usage_line("Summarizing", *usage) if usage else "Summarizing this chat now"
@@ -204,6 +231,8 @@ def main():
         if event.get("tool_name") != "request_user_input":
             return 0
         return run_peon(question_payload(event))
+    if name == "PermissionRequest" and auto_review_handles_permission(event):
+        return 0
     if name == "PreCompact":
         write_compact_body(event)
         return run_adapter(raw)

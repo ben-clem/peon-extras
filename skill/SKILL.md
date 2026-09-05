@@ -100,8 +100,9 @@ Keep these interfaces small and stable:
    fails, keep the working-directory fallback.
 2. `codex_hook.py` is the only custom Codex event adapter. Ordinary lifecycle
    events delegate to PeonPing's packaged `adapters/codex.sh`. It handles only
-   the missing behavior: `request_user_input`, cached PreCompact body, and the
-   PostCompact banner.
+   the missing behavior: `request_user_input`, cached PreCompact body, the
+   PostCompact banner, and suppression of `PermissionRequest` banners when the
+   task transcript says Codex auto-review is the active reviewer.
 3. `notify-banner-title.sh` restores the cached emoji title only when the
    sanitized incoming title matches. It also swaps PeonPing's stock
    `compacting: Context compacting` body and resets only the popup stacking

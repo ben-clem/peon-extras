@@ -64,8 +64,9 @@ Re-run `./install.sh` after `brew upgrade peon-ping` or `peon-ping-setup`. If
 
 The Codex adapter covers:
 
-- session start, prompt submit, approval request, completion, and subagent
-  lifecycle events through PeonPing's packaged Codex adapter;
+- session start, prompt submit, human approval request, completion, and subagent
+  lifecycle events through PeonPing's packaged Codex adapter; approval requests
+  handled by Codex auto-review stay silent;
 - `request_user_input` through a focused `PreToolUse` matcher, producing a blue
   input-required banner with the first question;
 - before/after compaction banners through `PreCompact` and `PostCompact`;

@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import sqlite3
@@ -133,6 +134,47 @@ class NotificationTitleTests(unittest.TestCase):
 
 
 class CodexHookTests(unittest.TestCase):
+    def test_permission_request_stays_silent_when_auto_review_is_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            transcript = Path(directory, "rollout.jsonl")
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "thread_settings_applied",
+                            "thread_settings": {
+                                "approvals_reviewer": "auto_review"
+                            },
+                        },
+                    }
+                )
+                + "\n"
+            )
+            event = {
+                "hook_event_name": "PermissionRequest",
+                "tool_name": "apply_patch",
+                "transcript_path": str(transcript),
+            }
+            with (
+                patch.object(sys, "stdin", io.StringIO(json.dumps(event))),
+                patch.object(codex_hook, "run_adapter", return_value=0) as adapter,
+            ):
+                self.assertEqual(codex_hook.main(), 0)
+        adapter.assert_not_called()
+
+    def test_permission_request_reaches_peon_without_auto_review(self):
+        event = {
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "apply_patch",
+        }
+        with (
+            patch.object(sys, "stdin", io.StringIO(json.dumps(event))),
+            patch.object(codex_hook, "run_adapter", return_value=0) as adapter,
+        ):
+            self.assertEqual(codex_hook.main(), 0)
+        adapter.assert_called_once()
+
     def test_request_user_input_becomes_question_notification(self):
         event = {
             "session_id": "abc",
