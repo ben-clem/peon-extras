@@ -17,8 +17,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _cache import CACHE_DIR, cache_path, prune_stale_entries
 from _usage import usage_line, usage_percent_from_db
 
-PEON_SCRIPT = os.path.expanduser("~/.claude/hooks/peon-ping/peon.sh")
-PEON_DIR = os.path.expanduser("~/.claude/hooks/peon-ping")
+PEON_DIR = os.path.expanduser(
+    os.environ.get("PEON_DIR", "~/.claude/hooks/peon-ping")
+)
+PEON_SCRIPT = os.path.join(PEON_DIR, "peon.sh")
 NOTIFY_SCRIPT = os.path.join(PEON_DIR, "scripts", "notify.sh")
 DROP_POINTS = 5.0
 POLL_SECONDS = 1.0

@@ -1,14 +1,18 @@
 #!/bin/bash
-# Idempotent install/repair for Cursor PeonPing extras.
+# Idempotent install/repair for Cursor and Codex PeonPing extras.
 # Safe to re-run after `brew upgrade peon-ping` or `peon-ping-setup`.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="${PEON_EXTRAS_DIR:-$HOME/.cursor/peon-extras}"
+DEST="${PEON_EXTRAS_DIR:-$HOME/.local/share/peon-extras}"
 PEON_DIR="${PEON_DIR:-$HOME/.claude/hooks/peon-ping}"
 HOOKS_JSON="${CURSOR_HOOKS_JSON:-$HOME/.cursor/hooks.json}"
 SETTINGS_JSON="${CURSOR_USER_SETTINGS:-$HOME/Library/Application Support/Cursor/User/settings.json}"
-SKILL_DEST="$HOME/.cursor/skills/peon-extras"
+CURSOR_SKILL_DEST="$HOME/.cursor/skills/peon-extras"
+CODEX_ROOT="${PEON_CODEX_ROOT:-${CODEX_HOME:-$HOME/.codex}}"
+CODEX_HOOKS_JSON="${CODEX_HOOKS_JSON:-$CODEX_ROOT/hooks.json}"
+CODEX_CONFIG_TOML="${CODEX_CONFIG_TOML:-$CODEX_ROOT/config.toml}"
+CODEX_SKILL_DEST="$CODEX_ROOT/skills/peon-extras"
 PEON_SH="$PEON_DIR/peon.sh"
 CONFIG_JSON="$PEON_DIR/config.json"
 
@@ -17,7 +21,10 @@ RUNTIME_FILES=(
   _usage.py
   build-large-overlay.py
   capture-response.py
+  codex_hook.py
   cursor-notification-title.py
+  install_codex_hooks.py
+  notification_title.py
   notify-banner-title.sh
   precompact.py
   stop-excerpt.py
@@ -87,16 +94,21 @@ rm -f "$DEST/HANDOFF.md"
 chmod +x \
   "$DEST/build-large-overlay.py" \
   "$DEST/capture-response.py" \
+  "$DEST/codex_hook.py" \
   "$DEST/cursor-notification-title.py" \
+  "$DEST/install_codex_hooks.py" \
+  "$DEST/notification_title.py" \
   "$DEST/notify-banner-title.sh" \
   "$DEST/precompact.py" \
   "$DEST/stop-excerpt.py"
 
-echo "== Cursor skill =="
+echo "== agent skills =="
 if [ -f "$REPO_DIR/skill/SKILL.md" ]; then
-  mkdir -p "$SKILL_DEST"
-  cp "$REPO_DIR/skill/SKILL.md" "$SKILL_DEST/SKILL.md"
-  echo "skill: $SKILL_DEST/SKILL.md"
+  for skill_dest in "$CURSOR_SKILL_DEST" "$CODEX_SKILL_DEST"; do
+    mkdir -p "$skill_dest"
+    cp "$REPO_DIR/skill/SKILL.md" "$skill_dest/SKILL.md"
+    echo "skill: $skill_dest/SKILL.md"
+  done
 fi
 
 echo "== merge hooks.json =="
@@ -182,6 +194,19 @@ with open(hooks_path, "w") as handle:
 print("wrote", hooks_path)
 PY
 
+echo "== merge Codex hooks.json =="
+python3 "$DEST/install_codex_hooks.py" "$CODEX_HOOKS_JSON" "$DEST"
+python3 - "$CODEX_CONFIG_TOML" <<'PY'
+import os, sys
+
+path = sys.argv[1]
+if os.path.isfile(path):
+    text = open(path, errors="replace").read().lower()
+    if "[[hooks." in text and ("peon-ping" in text or "peon-extras" in text):
+        print("warning: peon hooks also exist inline in {}".format(path))
+        print("review /hooks for duplicates; this installer owns hooks.json")
+PY
+
 echo "== merge peon-ping config.json =="
 python3 - "$CONFIG_JSON" "$DEST" <<'PY'
 import json, os, sys
@@ -195,7 +220,7 @@ if not isinstance(data, dict):
 
 # peon.sh runs this with shell=True from the workspace, not $PEON_DIR/scripts.
 # A bare filename is "command not found" and the banner falls back to the repo name.
-title_script = os.path.join(dest, "cursor-notification-title.py")
+title_script = os.path.join(dest, "notification_title.py")
 data["notification_title_script"] = "python3 {}".format(json.dumps(title_script))
 data["notification_title_marker"] = " > "
 data["notification_dismiss_seconds"] = 30
@@ -208,6 +233,7 @@ templates = data.get("notification_templates")
 if not isinstance(templates, dict):
     templates = {}
 templates["stop"] = "{summary}"
+templates["question"] = "{summary}"
 data["notification_templates"] = templates
 
 categories = data.get("categories")
@@ -245,9 +271,10 @@ python3 "$DEST/build-large-overlay.py"
 echo "== symlinks =="
 mkdir -p "$PEON_DIR/scripts"
 ln -sfn "$DEST/cursor-notification-title.py" "$PEON_DIR/scripts/cursor-notification-title.py"
+ln -sfn "$DEST/notification_title.py" "$PEON_DIR/scripts/notification_title.py"
 ln -sfn "$DEST/notify-banner-title.sh" "$PEON_DIR/scripts/notify.sh"
 ln -sfn "$DEST/mac-overlay-large.js" "$PEON_DIR/scripts/mac-overlay.js"
-ls -l "$PEON_DIR/scripts/cursor-notification-title.py" "$PEON_DIR/scripts/notify.sh" "$PEON_DIR/scripts/mac-overlay.js"
+ls -l "$PEON_DIR/scripts/cursor-notification-title.py" "$PEON_DIR/scripts/notification_title.py" "$PEON_DIR/scripts/notify.sh" "$PEON_DIR/scripts/mac-overlay.js"
 
 echo "== Cursor finish chime =="
 python3 - "$SETTINGS_JSON" <<'PY'
@@ -280,7 +307,7 @@ echo "== verification =="
 echo "peon.sh: $PEON_SH"
 echo "title script stdout (no session; exit 1 is ok):"
 set +e
-PEON_CWD="$DEST" PEON_SESSION_ID="" python3 "$DEST/cursor-notification-title.py"
+PEON_CWD="$DEST" PEON_SESSION_ID="" python3 "$DEST/notification_title.py"
 title_rc=$?
 set -e
 echo "title script exit: $title_rc"
@@ -293,10 +320,11 @@ if command -v node >/dev/null 2>&1; then
 else
   echo "node --check: skipped (node not on PATH)"
 fi
-python3 - "$HOOKS_JSON" "$CONFIG_JSON" <<'PY'
+python3 - "$HOOKS_JSON" "$CODEX_HOOKS_JSON" "$CONFIG_JSON" <<'PY'
 import json, sys
 hooks = json.load(open(sys.argv[1])).get("hooks", {})
-cfg = json.load(open(sys.argv[2]))
+codex_hooks = json.load(open(sys.argv[2])).get("hooks", {})
+cfg = json.load(open(sys.argv[3]))
 for event in (
     "beforeSubmitPrompt",
     "afterAgentResponse",
@@ -308,9 +336,20 @@ for event in (
     "subagentStop",
 ):
     print("hook {}: {}".format(event, hooks.get(event)))
+for event in (
+    "SessionStart",
+    "UserPromptSubmit",
+    "PermissionRequest",
+    "PreToolUse",
+    "PreCompact",
+    "PostCompact",
+    "Stop",
+):
+    print("Codex hook {}: {}".format(event, codex_hooks.get(event)))
 print("notification_title_script:", cfg.get("notification_title_script"))
 print("notification_title_marker:", cfg.get("notification_title_marker"))
 print("notification_templates.stop:", (cfg.get("notification_templates") or {}).get("stop"))
+print("notification_templates.question:", (cfg.get("notification_templates") or {}).get("question"))
 print("notification_dismiss_seconds:", cfg.get("notification_dismiss_seconds"))
 print("overlay_theme:", cfg.get("overlay_theme"))
 print("volume:", cfg.get("volume"))
@@ -320,4 +359,16 @@ print("categories.session.start:", (cfg.get("categories") or {}).get("session.st
 print("categories.task.acknowledge:", (cfg.get("categories") or {}).get("task.acknowledge"))
 print("categories.resource.limit:", (cfg.get("categories") or {}).get("resource.limit"))
 PY
+codex_cli="codex"
+if ! command -v codex >/dev/null 2>&1; then
+  for candidate in \
+    "/Applications/ChatGPT.app/Contents/Resources/codex" \
+    "/Applications/Codex.app/Contents/Resources/codex"; do
+    if [ -x "$candidate" ]; then
+      codex_cli="$candidate"
+      break
+    fi
+  done
+fi
+echo "Codex: run '$codex_cli' in a terminal, enter /hooks, trust the user hooks, then restart Codex Desktop."
 echo "install/repair complete."

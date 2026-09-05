@@ -1,10 +1,15 @@
-"""Shared cache locations for the Cursor-side peon-ping hook helpers."""
+"""Shared cache locations for the peon-ping hook helpers."""
 
 import os
 import re
 import time
 
-CACHE_DIR = os.path.expanduser("~/.cursor/peon-extras/cache")
+CACHE_DIR = os.path.expanduser(
+    os.environ.get(
+        "PEON_EXTRAS_CACHE_DIR",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"),
+    )
+)
 CACHE_TTL_DAYS = 14
 
 

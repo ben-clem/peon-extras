@@ -30,8 +30,13 @@ banner_title=""
 fallback_title=""
 safe_id="${PEON_SESSION_ID:-}"
 safe_id="${safe_id//[^A-Za-z0-9_-]/}"
+script_path="${BASH_SOURCE[0]}"
+if [ -L "$script_path" ]; then
+  script_path="$(readlink "$script_path")"
+fi
+cache_dir="${PEON_EXTRAS_CACHE_DIR:-$(cd "$(dirname "$script_path")" && pwd)/cache}"
 if [ -n "$safe_id" ]; then
-  cache_file="$HOME/.cursor/peon-extras/cache/banner-title-${safe_id:0:64}"
+  cache_file="$cache_dir/banner-title-${safe_id:0:64}"
   if [ -f "$cache_file" ]; then
     { IFS= read -r match_title
       IFS= read -r banner_title
@@ -61,7 +66,7 @@ new_msg="${1:-}"
 if [ "$new_msg" = "compacting: Context compacting" ]; then
   compact_body=""
   if [ -n "$safe_id" ]; then
-    compact_file="$HOME/.cursor/peon-extras/cache/compact-body-${safe_id:0:64}"
+    compact_file="$cache_dir/compact-body-${safe_id:0:64}"
     if [ -f "$compact_file" ]; then
       IFS= read -r compact_body < "$compact_file" || true
     fi

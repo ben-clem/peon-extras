@@ -1,135 +1,142 @@
 ---
 name: peon-extras
 description: >-
-  Installs and repairs Cursor extras for PeonPing (overlay geometry, notify.sh
-  title/body wrappers, hooks.json, config.json). Use when installing PeonPing
-  extras on a new Mac, after brew upgrade peon-ping, after peon-ping-setup, or
-  when restoring notify.sh, mac-overlay.js, or Cursor notification banner
-  customizations.
+  Installs and repairs Cursor and OpenAI Codex extras for PeonPing, including
+  lifecycle hooks, request_user_input notifications, conversation titles,
+  compaction banners, overlay geometry, and notify.sh wrappers. Use on a new
+  Mac, after brew upgrade peon-ping or peon-ping-setup, or when those specific
+  PeonPing customizations stop working.
 ---
 
-# PeonPing Cursor extras
+# PeonPing extras
 
-Runtime scripts in this repo (and `~/.cursor/peon-extras/` after install) are
-the source of truth. Do not paste them into markdown. Do not rewrite the
-wrappers to "simplify" them.
+Runtime scripts in this repo, and `~/.local/share/peon-extras/` after install,
+are the source of truth. Do not paste them into markdown or rewrite the wrapper
+flow casually.
 
-## When to run
+## Install or repair
 
-- First install on a Mac that already has Homebrew `peon-ping` and has run
-  `peon-ping-setup` once.
-- Repair after `brew upgrade peon-ping` (Cellar updates; generated overlay may
-  be stale).
-- Repair after `peon-ping-setup` (it rewrites hook registration and may put
-  hooks in the wrong file).
-
-## Install / repair
-
-1. Work from the git clone of this repo.
-2. Confirm `peon-ping` is installed (`brew --prefix peon-ping`) and
-   `~/.claude/hooks/peon-ping/peon.sh` exists. If `peon.sh` is missing, tell the
-   human to run `peon-ping-setup`, then re-run the installer. Do not invent a
-   second setup path.
-3. Run `./install.sh` from the clone. It is idempotent. It copies scripts to
-   `~/.cursor/peon-extras/`, merges user `hooks.json` and peon `config.json`,
-   installs/uses the `peasant_fr` pack, runs `build-large-overlay.py`, installs
-   the `$PEON_DIR/scripts/` symlinks, copies this skill to
-   `~/.cursor/skills/peon-extras/`, and sets
-   `cursor.composer.shouldChimeAfterChatFinishes` to `false`.
-4. If `build-large-overlay.py` exits non-zero, **stop**. Upstream changed a
-   patched line. Do not hand-edit `mac-overlay.js` or half-patch.
+1. Work from this git clone.
+2. Confirm `brew --prefix peon-ping` succeeds and
+   `~/.claude/hooks/peon-ping/peon.sh` exists. If it is missing, ask the human
+   to run `peon-ping-setup`, then rerun this installer.
+3. Run `./install.sh`. It is idempotent. It installs the runtime, merges Cursor
+   and Codex hooks, merges PeonPing config, selects `peasant_fr`, rebuilds the
+   overlay, installs the PeonPing script symlinks, and installs this skill for
+   both agents.
+4. If `build-large-overlay.py` exits nonzero, stop. Upstream changed a patched
+   line. Do not hand-edit a partial `mac-overlay.js`.
+5. After Codex hook changes, run `codex` in a terminal, enter `/hooks` in the
+   Codex CLI, and trust the user hooks. The Codex Desktop composer does not
+   resolve `/hooks`. Restart Codex Desktop after trusting the hooks. Non-managed
+   hooks do not run until reviewed. If `codex` is missing from `PATH`, use the
+   bundled `/Applications/ChatGPT.app/Contents/Resources/codex` when present,
+   or follow OpenAI's official CLI installation instructions.
+6. Ignore PeonPing's `detected (not set up)` Codex status when the user hooks
+   below are present. Its detector searches only `config.toml`. Do not add a
+   legacy `notify` callback to satisfy that detector; it duplicates completion
+   events.
 
 ## Completion criteria
 
-Print and satisfy all of:
+Satisfy all of these:
 
-- `~/.claude/hooks/peon-ping/scripts/notify.sh` → `notify-banner-title.sh`
-- `~/.claude/hooks/peon-ping/scripts/mac-overlay.js` → `mac-overlay-large.js`
-- `notification_title_script` is an absolute `python3 …/cursor-notification-title.py`
-  command. peon.sh runs it with `shell=True` from the workspace; a bare
-  filename is `command not found` and the banner falls back to the git repo
-  name with no `📂` / `💬`.
-- User hooks (`~/.cursor/hooks.json`, version 1) register:
-  - `beforeSubmitPrompt` → `peon.sh` only (no title-capture wrapper)
-  - `afterAgentResponse` → `capture-response.py` (cache only, no sound)
-  - `stop` → `stop-excerpt.py`
-  - `postToolUseFailure` → `peon.sh`
-  - `preCompact` → `precompact.py` (never `peon.sh` directly)
-- No peon commands on `sessionStart`, `sessionStop`, `subagentStart`,
-  `subagentStop`. Drop them if `peon-ping-setup` added them back. Cursor fires
-  `sessionStart` in the same millisecond as the first `beforeSubmitPrompt`, so
-  both sounds play. Leave `categories.session.start` true for other adapters.
-- `node --check` on the generated overlay succeeds.
-- `peasant_fr` is installed and selected (`peon packs use peasant_fr`);
-  `default_pack` is `peasant_fr`.
-- `config.json` `categories` uses dotted CESP keys: `session.start`,
-  `task.acknowledge`, and `resource.limit` are `true`. Nested
-  `categories.task.acknowledge` is ignored by `peon.sh` and leaves submit silent.
-- Submit is **sound only** (`task.acknowledge`). Banners fire on `stop` and
-  `preCompact`, not on `beforeSubmitPrompt`.
-- The generated overlay contains no `ObjC.registerSubclass` (`grep -c` is 0).
-  On macOS 26 that call hangs forever inside libffi, so upstream's overlay
-  never draws and burns ~65% CPU until notify.sh's watchdog kills it. The
-  generator swaps in a hand-pumped event loop and a `/tmp/peon-ping-popups/
-  .dismiss-*` marker for sibling dismissal. Symptom to recognise: sounds play,
-  no banner, `osascript ... mac-overlay.js` processes alive at high CPU.
+- `$PEON_DIR/scripts/notify.sh` points to `notify-banner-title.sh`.
+- `$PEON_DIR/scripts/mac-overlay.js` points to `mac-overlay-large.js`.
+- `notification_title_script` is an absolute
+  `python3 …/notification_title.py` command.
+- Cursor `~/.cursor/hooks.json` registers:
+  - `beforeSubmitPrompt` to `peon.sh`;
+  - `afterAgentResponse` to `capture-response.py`;
+  - `stop` to `stop-excerpt.py`;
+  - `postToolUseFailure` to `peon.sh`;
+  - `preCompact` to `precompact.py`.
+- Cursor has no peon command on `sessionStart`, `sessionStop`,
+  `subagentStart`, or `subagentStop`. Cursor fires session start beside the
+  first prompt submission, which causes duplicate sound.
+- Codex `~/.codex/hooks.json` registers `codex_hook.py` for `SessionStart`,
+  `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`, `PreCompact`,
+  `PostCompact`, `SubagentStart`, `SubagentStop`, and `Stop`.
+- Codex `PreToolUse` matches only `^request_user_input$`.
+- `node --check` succeeds on the generated overlay.
+- `peasant_fr` is installed and selected.
+- Config categories use dotted CESP keys: `session.start`,
+  `task.acknowledge`, and `resource.limit` are true.
+- Submit is sound only. Completion, question, and compaction events may show
+  banners.
+- `notification_templates.stop` and `notification_templates.question` are
+  both `{summary}`.
+- The generated overlay contains no `ObjC.registerSubclass`.
 
-## Settings lock
+## Locked settings
 
-These are the preferred settings. `./install.sh` reapplies the config and hook
-ones. Script constants live in the named file. Do not revert them to upstream
-defaults.
+`./install.sh` reapplies these choices:
 
 - Overlay `650x100`, icon `72`, title font `18`, excerpt font `14`, gap `10`,
-  icon-to-text `+16`, left-aligned: `build-large-overlay.py`
-- Title `📂 workspace 💬 chat-title`, ASCII fallback `workspace > chat-title`.
-  Empty-window and `$HOME` cwd use workspace `Home`:
-  `cursor-notification-title.py`
-- Stop body: first non-empty line of the assistant reply, max 160 chars:
-  `capture-response.py`
-- Summarize copy `Summarizing:` / `Done summarizing:` plus K-format
-  (`287.1K / 300K Tokens (96% Full)`): `_usage.py`
-- `overlay_theme` neon, `default_pack` / selected pack `peasant_fr`, volume
-  `0.25`, dismiss `30` seconds, stop template `{summary}`
-- Cursor finish chime off:
-  `cursor.composer.shouldChimeAfterChatFinishes: false`
+  icon-to-text `+16`, left aligned: `build-large-overlay.py`.
+- Title `💻 agent 📂 workspace 💬 conversation`, with ASCII fallback
+  `agent > workspace > conversation`: `notification_title.py`. Projectless
+  Codex Desktop tasks use workspace `Recents`; named projects use their Codex
+  project name. Cursor and Codex CLI use their working-directory name.
+- Completion body is the first nonempty assistant line, up to 160 characters.
+  Cursor caches it through `capture-response.py`; Codex supplies
+  `last_assistant_message` on `Stop`.
+- Compaction copy is `Summarizing:` or `Done summarizing:` plus K-format token
+  usage when available: `_usage.py`.
+- Neon overlay, `peasant_fr`, volume `0.25`, 30-second dismiss, subagent
+  completion suppressed.
+- Cursor's built-in finish chime is off.
 
-## Two wrapper seams (do not remove)
+## Adapter seams
 
-1. **Title:** `peon.sh` sanitizes the project label to `[A-Za-z0-9 ._-]`, so
-   emoji, `>`, and commas never reach the overlay. `cursor-notification-title.py`
-   prints the `>` form and caches match/emoji/fallback. Cloud agent chats
-   (ids starting `bc-`) are not `composerHeaders` rows; their name is on
-   `cloudAgentRepository.agents.*` in `ItemTable`.
-   `notify-banner-title.sh` restores emoji only when `$2` equals that cached
-   sanitized match or the `>` fallback. Leave `peon-ping-rename`, `peon-label`,
-   and `CLAUDE_SESSION_NAME` alone. Before `exec`, it also rewrites the count
-   field in `/tmp/peon-ping-popups/.session-<id>` to `0` when the slot is
-   numeric. The delegate still reuses the slot and kills the live overlay;
-   `count` stays `1`, so it skips the `(N)` prefix on title and body. Keep
-   stacking on and dismiss at 30 seconds.
-2. **Overlay file:** PeonPing prefers `$PEON_DIR/scripts/mac-overlay.js` over
-   the Homebrew copy. That path is a symlink to the generated
-   `mac-overlay-large.js`. Rebuild after every upgrade; abort if a replacement
-   pattern is not unique.
+Keep these interfaces small and stable:
 
-The same notify wrapper also swaps the stock PreCompact body
-(`compacting: Context compacting`) for the cached summarize line. Copy says
-summarize; the hook name stays `preCompact`.
+1. `notification_title.py` is the only title provider exposed to PeonPing. It
+   selects a read-only Cursor or Codex metadata adapter from `PEON_IDE` and the
+   session id. Codex ids arrive as `codex-<session_id>` and must be normalized
+   before reading `~/.codex/session_index.jsonl` and `~/.codex/state_5.sqlite`.
+   Use the transcript originator plus the thread's `project_id` to distinguish
+   a projectless Codex Desktop task from CLI and IDE sessions. If a lookup
+   fails, keep the working-directory fallback.
+2. `codex_hook.py` is the only custom Codex event adapter. Ordinary lifecycle
+   events delegate to PeonPing's packaged `adapters/codex.sh`. It handles only
+   the missing behavior: `request_user_input`, cached PreCompact body, and the
+   PostCompact banner.
+3. `notify-banner-title.sh` restores the cached emoji title only when the
+   sanitized incoming title matches. It also swaps PeonPing's stock
+   `compacting: Context compacting` body and resets only the popup stacking
+   count so a live banner is replaced without an `(N)` prefix.
+4. PeonPing prefers `$PEON_DIR/scripts/mac-overlay.js` over the Homebrew copy.
+   That path stays linked to the generated overlay.
+
+Cursor cloud-agent conversations are not `composerHeaders` rows; their titles
+live under `cloudAgentRepository.agents.*` in `ItemTable`.
+
+Codex title and token-count formats are internal, read-only, best-effort
+lookups. Keep generic fallbacks. Do not make notification delivery depend on a
+successful internal lookup.
 
 ## Hard rules
 
-- Never `subprocess.PIPE` `peon.sh` stdout. The overlay child inherits the pipe
-  and Cursor kills the hook at 60s. Use `stdout=DEVNULL`.
-- Never write Cursor `state.vscdb`. Title and after-summarize percent are
-  read-only.
-- Do not revive `capture-title.py`, `session-title.sh`, or `pretooluse-probe.py`.
-- Do not add `subagentStart` / `subagentStop`. Keep
-  `suppress_subagent_complete` true.
-- There is no IDE hook for AskQuestion. Do not invent a workaround. After a
-  Cursor upgrade, a temporary `preToolUse` probe is allowed; until it logs
-  `tool_name: AskQuestion`, leave input-required banners blocked.
-- Restore packaged notify/overlay only if the user asks to disable extras:
+- Never capture `peon.sh` or `adapters/codex.sh` stdout with
+  `subprocess.PIPE`. The overlay child inherits the pipe. Cursor then kills the
+  hook at its timeout, and Codex `Stop` also rejects plain-text hook output.
+  Route stdout and stderr to `DEVNULL`.
+- Never write Cursor `state.vscdb`, Codex `session_index.jsonl`, or Codex
+  transcripts.
+- Do not register all Codex `PreToolUse` events. Match only
+  `request_user_input`.
+- Do not add Cursor subagent start or stop hooks. Keep
+  `suppress_subagent_complete` true for both agents.
+- Do not revive `capture-title.py`, `session-title.sh`, or
+  `pretooluse-probe.py`.
+- `install_codex_hooks.py` owns user-level `~/.codex/hooks.json`. Preserve
+  unrelated hook rules. If PeonPing hooks also exist inline in
+  `~/.codex/config.toml`, warn about duplicate matching hooks instead of
+  deleting unknown TOML.
+
+Restore packaged notify and overlay scripts only when the human asks to
+disable the extras:
 
 ```bash
 ln -sfn "$(brew --prefix peon-ping)/libexec/scripts/notify.sh" \
@@ -138,20 +145,27 @@ ln -sfn "$(brew --prefix peon-ping)/libexec/scripts/mac-overlay.js" \
   ~/.claude/hooks/peon-ping/scripts/mac-overlay.js
 ```
 
-Intel Homebrew prefix is `/usr/local/opt/peon-ping` when `brew --prefix` is
+Intel Homebrew uses `/usr/local/opt/peon-ping` when `brew --prefix` is
 unavailable.
 
-## Testing summarize without a live session
+## Verification
 
-Do not burn a real chat. Point `CURSOR_STATE_DB` at a throwaway SQLite file.
+Run:
 
-1. Create `composerHeaders(composerId, value, lastUpdatedAt)` with one row
-   whose JSON `value` has `name` and `contextUsagePercent`.
-2. Pipe a synthetic `precompact` payload with `context_tokens`,
-   `context_window_size`, and `context_usage_percent` into `precompact.py`.
-3. Wait a few seconds, then `UPDATE` the row to a lower percent.
-4. Pass: `cache/summarize-watch-<id>` disappears after the after-banner.
-5. Delete that fake id's cache entries.
+```bash
+python3 -m unittest discover -s tests -v
+python3 -m py_compile ./*.py
+bash -n install.sh notify-banner-title.sh
+node --check mac-overlay-large.js
+```
 
-This exercises the logic, not the display. Only a real `/summarize` proves the
-banner on screen.
+The generated overlay exists only after the installer runs.
+
+For a live Codex check after restart and hook trust:
+
+1. Submit a prompt and confirm the acknowledgement sound has no banner.
+2. Trigger a `request_user_input` question and confirm a blue question banner.
+3. Complete a turn and confirm the banner uses the assistant excerpt and
+   `💻 agent 📂 workspace 💬 conversation` title.
+4. Use `/compact` only when a real compaction test is warranted; unit tests use
+   a synthetic transcript instead.
