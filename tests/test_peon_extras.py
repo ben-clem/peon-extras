@@ -135,6 +135,45 @@ class NotificationTitleTests(unittest.TestCase):
 
 
 class CodexHookTests(unittest.TestCase):
+    def test_permission_request_uses_latest_reviewer_across_transcript_formats(self):
+        def context(reviewer):
+            return {"type": "turn_context", "payload": {"approvals_reviewer": reviewer}}
+
+        def settings(reviewer):
+            return {
+                "type": "event_msg",
+                "payload": {
+                    "type": "thread_settings_applied",
+                    "thread_settings": {"approvals_reviewer": reviewer},
+                },
+            }
+
+        cases = [
+            ([context("auto_review")], 0),
+            ([context("guardian_subagent")], 0),
+            ([context("user")], 1),
+            ([settings("user"), context("auto_review")], 0),
+            ([settings("auto_review"), context("user")], 1),
+            ([context("auto_review"), settings("user")], 1),
+            ([context("user"), settings("auto_review")], 0),
+            ([context("auto_review"), {"type": "turn_context", "payload": {}}], 1),
+        ]
+        for records, expected_notifications in cases:
+            with self.subTest(records=records), tempfile.TemporaryDirectory() as directory:
+                transcript = Path(directory, "rollout.jsonl")
+                transcript.write_text("".join(json.dumps(item) + "\n" for item in records))
+                event = {
+                    "hook_event_name": "PermissionRequest",
+                    "tool_name": "exec_command",
+                    "transcript_path": str(transcript),
+                }
+                with (
+                    patch.object(sys, "stdin", io.StringIO(json.dumps(event))),
+                    patch.object(codex_hook, "run_adapter", return_value=0) as adapter,
+                ):
+                    self.assertEqual(codex_hook.main(), 0)
+                self.assertEqual(adapter.call_count, expected_notifications)
+
     def test_permission_request_stays_silent_when_auto_review_is_configured(self):
         with tempfile.TemporaryDirectory() as directory:
             transcript = Path(directory, "rollout.jsonl")

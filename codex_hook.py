@@ -122,12 +122,20 @@ def latest_approvals_reviewer(path):
             record = json.loads(line)
         except (TypeError, ValueError):
             continue
-        if record.get("type") != "event_msg":
-            continue
         payload = record.get("payload")
-        if not isinstance(payload, dict) or payload.get("type") != "thread_settings_applied":
+        if not isinstance(payload, dict):
             continue
-        settings = payload.get("thread_settings")
+        # Current Codex writes the reviewer in each turn context. Older
+        # transcripts use settings events; read both in chronological order.
+        if record.get("type") == "turn_context":
+            settings = payload
+        elif (
+            record.get("type") == "event_msg"
+            and payload.get("type") == "thread_settings_applied"
+        ):
+            settings = payload.get("thread_settings")
+        else:
+            continue
         if not isinstance(settings, dict):
             continue
         reviewer = clean_line(settings.get("approvals_reviewer"), 40)
