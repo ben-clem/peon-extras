@@ -61,6 +61,41 @@ events.
 Re-run `./install.sh` after `brew upgrade peon-ping` or `peon-ping-setup`. If
 `build-large-overlay.py` fails, stop. Upstream overlay lines changed.
 
+## Windows
+
+`windows\` is a Node port for Cursor only. It needs Node 22.5 or later (for
+`node:sqlite`) and peon-ping installed with its Windows `install.ps1`. From
+the clone:
+
+```powershell
+node windows\install.mjs
+```
+
+The installer copies the runtime to `%USERPROFILE%\.local\share\peon-extras\`,
+merges Cursor hooks into `%USERPROFILE%\.cursor\hooks.json`, and replaces
+peon-ping's `scripts\win-notify.ps1` with a wrapper. It keeps the packaged
+script as `win-notify.stock.ps1`. It backs up every file it rewrites. Re-run
+it after re-running peon-ping's `install.ps1`, which overwrites the wrapper.
+Execution policy can stay Restricted. The hooks set a process-level Bypass
+(`-ExecutionPolicy Bypass` and `PSExecutionPolicyPreference`) for the scripts
+they launch.
+
+Banners are a WPF overlay (`win-overlay.ps1`) sized like the macOS one. They
+are blue when a chat finishes and red for compaction, sit at top-center, and
+stack up to five. A new banner from the same chat replaces the old one. Click a
+banner to dismiss it, or it closes after `notification_dismiss_seconds`. The
+overlay never takes focus. WPF draws emoji in monochrome. To use the stock
+Windows toast instead, set this in
+`%USERPROFILE%\.local\share\peon-extras\peon-extras.json`:
+
+```json
+{ "banner_style": "toast" }
+```
+
+Remove the key to go back to the overlay. The wrapper also falls back to the
+toast if the overlay fails. [`windows/SKILL.md`](windows/SKILL.md) covers repair
+and verification.
+
 ## Codex events
 
 The Codex adapter covers:
