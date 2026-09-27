@@ -46,7 +46,10 @@ This port lives in `windows\` of that clone and installs to
 - `peon.ps1` ignores `notification_title_script`, so the title is restored by
   the win-notify wrapper from the cache that `notification_title.mjs` writes
   (`cache\banner-title-<conversation>`), keyed by `PEON_SESSION_ID`, which the
-  runner sets and `Start-Process` children inherit.
+  runner sets and `Start-Process` children inherit. Unlike macOS, a chat
+  Cursor has not named yet still caches `💻 Cursor 📂 <workspace>`. The wrapper
+  strips `notification_title_marker` from titles it passes through, because
+  `peon.ps1` puts the marker in the banner title and `peon.sh` does not.
 - Banners are drawn by `win-overlay.ps1` (WPF from Windows PowerShell 5.1), a
   port of peon-ping's `mac-overlay.js` at the peon-extras size: 650x100,
   rounded 12, 95% opaque, blue for Stop and red for PreCompact, pack icon (or
@@ -90,5 +93,8 @@ Send a sample stop payload and watch `logs\hooks.log`:
 
 Expect a "C'est fait"-style peasant_fr line and a blue overlay banner at the
 top-center of each screen. `logs\hooks.log` shows an `overlay title=...` line
-(or `overlay failed, falling back to toast` plus a `toast` line). Set
+(or `overlay failed, falling back to toast` plus a `toast` line). The title is
+`💻 Cursor 📂 peon-extras` for `test-1`, since Cursor has no name for it; a
+named chat adds `💬 <chat title>`. A title starting with `>` or `●` means the
+wrapper passed peon.ps1's stock title through. Set
 `PEON_EXTRAS_OVERLAY_SNAPSHOT=<dir>` before the test to save PNG proofs.

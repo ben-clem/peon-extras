@@ -27,7 +27,17 @@ $cacheDir = if ($env:PEON_EXTRAS_CACHE_DIR) { $env:PEON_EXTRAS_CACHE_DIR } else 
 $sid = ([string]$env:PEON_SESSION_ID) -replace '[^A-Za-z0-9_-]', ''
 if ($sid.Length -gt 64) { $sid = $sid.Substring(0, 64) }
 
+$cfg = $null
+try {
+    $peonDir = Split-Path -Parent $PSScriptRoot
+    $cfg = Get-Content -LiteralPath (Join-Path $peonDir 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch {}
+
+# peon.ps1 builds the title as "<notification_title_marker> <project>". peon.sh only puts the marker
+# in the terminal tab title and sends the bare project to the banner, so drop it the same way.
+$marker = if ($cfg -and $cfg.notification_title_marker) { [string]$cfg.notification_title_marker } else { [string][char]0x25CF }
 $newTitle = $title
+if ($title.StartsWith("$marker ")) { $newTitle = $title.Substring($marker.Length + 1).Trim() }
 $newBody = $body
 $swapped = $false
 
@@ -79,11 +89,6 @@ try { $settings = Get-Content -LiteralPath (Join-Path $extras 'peon-extras.json'
 $style = if ($settings -and $settings.banner_style) { [string]$settings.banner_style } else { 'overlay' }
 $overlay = Join-Path $extras 'win-overlay.ps1'
 if ($style -ne 'toast' -and (Test-Path -LiteralPath $overlay)) {
-    $cfg = $null
-    try {
-        $peonDir = Split-Path -Parent $PSScriptRoot
-        $cfg = Get-Content -LiteralPath (Join-Path $peonDir 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    } catch {}
     $pos = if ($cfg -and $cfg.notification_position) { [string]$cfg.notification_position } else { 'top-center' }
     $all = if ($cfg -and $null -ne $cfg.notification_all_screens) { ([string]$cfg.notification_all_screens).ToLower() } else { 'true' }
     # mac-overlay.js colours as peon.sh assigns them here: Stop/after-summary blue, PreCompact red.

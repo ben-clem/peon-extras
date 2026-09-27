@@ -13,7 +13,8 @@ const MAX_AGENT_CHARS = 10;
 const MAX_WORKSPACE_CHARS = 20;
 const HOME_WORKSPACE_LABEL = "Home";
 const PLAIN_SEPARATOR = " > ";
-const banner = (a, w, c) => `\u{1F4BB} ${a} \u{1F4C2} ${w} \u{1F4AC} ${c}`;
+const BANNER_ICONS = ["\u{1F4BB}", "\u{1F4C2}", "\u{1F4AC}"];
+const banner = (parts) => parts.map((p, i) => `${BANNER_ICONS[i]} ${p}`).join(" ");
 
 const cleanLabel = (v) => String(v ?? "").split(/\s+/).filter(Boolean).join(" ");
 
@@ -119,9 +120,12 @@ function truncate(value, length) {
 
 function titleParts(agent, workspace, chat) {
   agent = cleanLabel(agent); workspace = cleanLabel(workspace); chat = cleanLabel(chat);
-  if (!agent || !workspace || !chat) return null;
+  if (!agent || !workspace) return null;
   agent = truncate(agent, MAX_AGENT_CHARS);
   workspace = truncate(workspace, MAX_WORKSPACE_CHARS);
+  // Chats Cursor has not named yet still get agent and workspace. The only other title here is
+  // peon.ps1's "<marker> <folder>", which carries neither.
+  if (!chat) return [agent, workspace];
   const available = MAX_TITLE_CHARS - agent.length - workspace.length - 2 * PLAIN_SEPARATOR.length;
   if (available < 1) return null;
   return [agent, workspace, truncate(chat, available)];
@@ -153,12 +157,11 @@ export async function computeTitle(sessionId, cwd) {
   const parts = titleParts("Cursor", workspaceLabel(cwd), await cursorChatTitle(sessionId));
   const file = cachePath("banner-title", sessionId);
   if (!parts) {
-    // Same as the Mac provider: no title -> clear the cache so the stock peon.ps1 title is used.
     if (file) { try { fs.rmSync(file, { force: true }); } catch {} }
     return null;
   }
   const plain = parts.join(PLAIN_SEPARATOR);
-  const emoji = banner(...parts);
+  const emoji = banner(parts);
   if (file) writeCache(file, `${peonProjectName(cwd)}\n${emoji}\n${plain}\n`);
   return { plain, banner: emoji };
 }
