@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build a PeonPing title from read-only Cursor or Codex chat metadata.
+"""Build a PeonPing title from Cursor/Codex metadata or OpenCode session data.
 
 PeonPing supplies PEON_IDE, PEON_SESSION_ID, and PEON_CWD. This script prints
 ``agent > workspace > chat-title`` and caches the emoji form for the notify
-wrapper.
+wrapper. OpenCode supplies its session title through PEON_CHAT_TITLE; Cursor
+and Codex titles are read from their local session metadata.
 """
 
 import json
@@ -359,13 +360,18 @@ def codex_workspace_label(cwd, session_id, transcript_path):
 
 
 def agent_label(ide, session_id):
-    if clean_label(ide).lower() == "codex" or session_id.startswith("codex-"):
+    normalized_ide = clean_label(ide).lower()
+    if normalized_ide == "codex" or session_id.startswith("codex-"):
         return "Codex"
+    if normalized_ide in ("opencode", "open-code", "open_code"):
+        return "OpenCode"
     return "Cursor"
 
 
 def chat_title(ide, session_id):
-    if clean_label(ide).lower() == "codex" or session_id.startswith("codex-"):
+    if agent_label(ide, session_id) == "OpenCode":
+        return clean_label(os.environ.get("PEON_CHAT_TITLE"))
+    if agent_label(ide, session_id) == "Codex":
         return codex_chat_title(session_id)
     return cursor_chat_title(session_id)
 

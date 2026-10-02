@@ -1,5 +1,5 @@
 #!/bin/bash
-# Idempotent install/repair for Cursor and Codex PeonPing extras.
+# Idempotent install/repair for Cursor, Codex, and OpenCode PeonPing extras.
 # Safe to re-run after `brew upgrade peon-ping` or `peon-ping-setup`.
 set -euo pipefail
 
@@ -13,6 +13,8 @@ CODEX_ROOT="${PEON_CODEX_ROOT:-${CODEX_HOME:-$HOME/.codex}}"
 CODEX_HOOKS_JSON="${CODEX_HOOKS_JSON:-$CODEX_ROOT/hooks.json}"
 CODEX_CONFIG_TOML="${CODEX_CONFIG_TOML:-$CODEX_ROOT/config.toml}"
 CODEX_SKILL_DEST="$CODEX_ROOT/skills/peon-extras"
+OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+OPENCODE_CONFIG_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 PEON_SH="$PEON_DIR/peon.sh"
 CONFIG_JSON="$PEON_DIR/config.json"
 
@@ -26,6 +28,7 @@ RUNTIME_FILES=(
   install_codex_hooks.py
   notification_title.py
   notify-banner-title.sh
+  opencode_hook.py
   precompact.py
   stop-excerpt.py
 )
@@ -99,8 +102,15 @@ chmod +x \
   "$DEST/install_codex_hooks.py" \
   "$DEST/notification_title.py" \
   "$DEST/notify-banner-title.sh" \
+  "$DEST/opencode_hook.py" \
   "$DEST/precompact.py" \
   "$DEST/stop-excerpt.py"
+
+echo "== install OpenCode V2 plugin =="
+mkdir -p "$DEST/opencode"
+cp "$REPO_DIR/opencode/index.ts" "$DEST/opencode/index.ts"
+cp "$REPO_DIR/opencode/events.mjs" "$DEST/opencode/events.mjs"
+python3 "$REPO_DIR/install_opencode_plugin.py" "$OPENCODE_CONFIG_JSON" "$DEST/opencode"
 
 echo "== agent skills =="
 if [ -f "$REPO_DIR/skill/SKILL.md" ]; then
