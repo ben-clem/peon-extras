@@ -20,9 +20,8 @@ This is not a fork. Install peon-ping first.
   [Windows](#windows).
 - **Codex** (CLI and Desktop): hooks in `~/.codex/hooks.json`, alongside
   PeonPing's packaged Codex adapter. See [Codex events](#codex-events).
-- **OpenCode** (V2): a plugin that listens to OpenCode's event stream. There is
-  no session-start sound; a blank session stays quiet until its first prompt.
-  See [OpenCode events](#opencode-events).
+- **OpenCode** (V2): a plugin that listens to OpenCode's event stream. See
+  [OpenCode events](#opencode-events).
 
 One `./install.sh` sets up all three on macOS. They share the overlay, the
 banner titles, and the compaction banners.
@@ -141,15 +140,11 @@ internal format changes, notifications still fire with fallback copy.
 The OpenCode V2 plugin listens to OpenCode's event stream and maps root-session
 events to PeonPing notifications. Child sessions stay silent. It covers:
 
-- prompt submit, on every turn including the first;
+- prompt submit;
 - completion, with the latest assistant excerpt;
 - questions, showing the first question;
 - permission requests and errors;
 - before/after compaction banners.
-
-There is no session-start sound. Opening a session only records its title and
-directory, so a blank session stays quiet. The first prompt plays the submit
-sound right away.
 
 Compaction usage is estimated from the latest assistant token count and the active model's
 context window. The shared title helper combines OpenCode's session title and
