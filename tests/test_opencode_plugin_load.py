@@ -250,25 +250,6 @@ class OpenCodePluginLoadTests(unittest.TestCase):
                     session = response.get("data", response)
                     session_id = session["id"]
 
-                    deadline = time.monotonic() + 5
-                    events = []
-                    while time.monotonic() < deadline:
-                        if capture_path.exists():
-                            events = [
-                                json.loads(line)
-                                for line in capture_path.read_text().splitlines()
-                            ]
-                            if any(
-                                event["hook_event_name"] == "SessionStart"
-                                for event in events
-                            ):
-                                break
-                        time.sleep(0.05)
-                    self.assertTrue(
-                        any(event["hook_event_name"] == "SessionStart" for event in events),
-                        "SessionStart did not reach the fake Peon runtime",
-                    )
-
                     subprocess.run(
                         [
                             OPENCODE,
@@ -338,9 +319,8 @@ class OpenCodePluginLoadTests(unittest.TestCase):
                     by_name = {event["hook_event_name"]: event for event in events}
                     self.assertEqual(
                         [event["hook_event_name"] for event in events],
-                        ["SessionStart", "UserPromptSubmit", "Stop"],
+                        ["UserPromptSubmit", "Stop"],
                     )
-                    self.assertEqual(by_name["SessionStart"]["title"], "Plugin load verification")
                     self.assertEqual(by_name["UserPromptSubmit"]["session_id"], session_id)
                     self.assertEqual(by_name["Stop"]["session_id"], session_id)
                     self.assertEqual(by_name["Stop"]["title"], "Plugin load verification")

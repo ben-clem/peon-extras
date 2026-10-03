@@ -3,7 +3,7 @@ import test from "node:test"
 
 import { createOpenCodeEventAdapter } from "../opencode/events.mjs"
 
-test("a newly created root session sends one Peon session-start event", async () => {
+test("a new root session sends one prompt-submit event on its first prompt", async () => {
   const emitted = []
   const adapter = createOpenCodeEventAdapter({ emit: (event) => emitted.push(event) })
 
@@ -17,10 +17,14 @@ test("a newly created root session sends one Peon session-start event", async ()
       location: { directory: "/work/peon-extras" },
     },
   })
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_root" },
+  })
 
   assert.deepEqual(emitted, [
     {
-      hook_event_name: "SessionStart",
+      hook_event_name: "UserPromptSubmit",
       session_id: "ses_root",
       cwd: "/work/peon-extras",
       title: "Review the adapter",
@@ -29,7 +33,7 @@ test("a newly created root session sends one Peon session-start event", async ()
   ])
 })
 
-test("child sessions do not send session-start sounds", async () => {
+test("child sessions do not send prompt-submit sounds", async () => {
   const emitted = []
   const adapter = createOpenCodeEventAdapter({ emit: (event) => emitted.push(event) })
 
@@ -44,17 +48,17 @@ test("child sessions do not send session-start sounds", async () => {
       },
     },
   })
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_child" },
+  })
 
   assert.deepEqual(emitted, [])
 })
 
-test("busy session transitions send one prompt-submit event after session start", async () => {
+test("each busy session transition sends a prompt-submit event", async () => {
   const emitted = []
-  let currentTime = 1_000
-  const adapter = createOpenCodeEventAdapter({
-    emit: (event) => emitted.push(event),
-    now: () => currentTime,
-  })
+  const adapter = createOpenCodeEventAdapter({ emit: (event) => emitted.push(event) })
 
   await adapter.handle({
     type: "session.created",
@@ -70,7 +74,6 @@ test("busy session transitions send one prompt-submit event after session start"
     type: "session.status",
     properties: { sessionID: "ses_root", status: { type: "idle" } },
   })
-  currentTime = 5_000
   await adapter.handle({
     type: "session.status",
     properties: { sessionID: "ses_root", status: { type: "busy" } },
@@ -78,7 +81,7 @@ test("busy session transitions send one prompt-submit event after session start"
 
   assert.deepEqual(
     emitted.map((event) => event.hook_event_name),
-    ["SessionStart", "UserPromptSubmit"],
+    ["UserPromptSubmit", "UserPromptSubmit"],
   )
 })
 
@@ -89,7 +92,6 @@ test("V2 execution lifecycle events emit prompt-submit and completion events", a
     getMessages: async () => [
       { type: "assistant", content: [{ type: "text", text: "The lifecycle is working." }] },
     ],
-    now: () => 1_000,
   })
 
   await adapter.handle({
@@ -119,13 +121,6 @@ test("V2 execution lifecycle events emit prompt-submit and completion events", a
       message,
     })),
     [
-      {
-        hook_event_name: "SessionStart",
-        session_id: "ses_root",
-        cwd: "/work/repo",
-        title: "Lifecycle test",
-        message: undefined,
-      },
       {
         hook_event_name: "UserPromptSubmit",
         session_id: "ses_root",
@@ -158,7 +153,6 @@ test("lazy plugin activation recovers session title and directory for V2 events"
       }
     },
     getMessages: async () => [],
-    now: () => 10_000,
   })
 
   await adapter.handle({
@@ -208,7 +202,6 @@ test("location-specific adapters only notify for sessions in their own location"
   const options = {
     getSession: async () => session,
     getMessages: async () => [],
-    now: () => 10_000,
   }
   const homeAdapter = createOpenCodeEventAdapter({
     ...options,
@@ -242,7 +235,7 @@ test("location-specific adapters only notify for sessions in their own location"
   assert.deepEqual(emittedByHome, [])
   assert.deepEqual(
     emittedByWorktree.map(({ hook_event_name }) => hook_event_name),
-    ["SessionStart", "UserPromptSubmit", "Stop"],
+    ["UserPromptSubmit", "Stop"],
   )
 })
 
@@ -343,7 +336,7 @@ test("questions, permission requests, and session errors map to Peon events", as
   })
 
   assert.deepEqual(
-    emitted.slice(1).map(({ hook_event_name, message, tool_name, error }) => ({
+    emitted.map(({ hook_event_name, message, tool_name, error }) => ({
       hook_event_name,
       message,
       tool_name,
@@ -399,7 +392,7 @@ test("compaction hooks send before and after Peon banner events", async () => {
   })
 
   assert.deepEqual(
-    emitted.slice(1).map(({ hook_event_name, context_tokens, context_window_size }) => ({
+    emitted.map(({ hook_event_name, context_tokens, context_window_size }) => ({
       hook_event_name,
       context_tokens,
       context_window_size,
