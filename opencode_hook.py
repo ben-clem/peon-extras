@@ -8,12 +8,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _cache import CACHE_DIR, cache_path, prune_stale_entries
 from _usage import usage_line
 
 DEFAULT_PEON_DIR = "~/.claude/hooks/peon-ping"
 TITLE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notification_title.py")
 FALLBACK_COMPACT_BODY = "Summarizing this chat now"
+TRACE_MARKER_PATH = Path.home() / ".local/share/peon-extras/trace-events.enabled"
+TRACE_LOG_PATH = Path.home() / ".local/share/opencode/log/peon-extras-trace.jsonl"
+TRACE_PREFIX = "[DEBUG-PEON-EXTRAS-TRACE]"
 
 
 def peon_dir():
@@ -61,16 +63,20 @@ def usage_banner(event, prefix):
     )
 
 
-def store_compact_body(event):
-    path = cache_path("compact-body", event.get("session_id"))
-    if not path:
+def trace_peon_event(event):
+    if os.environ.get("PEON_EXTRAS_TRACE_EVENTS") != "1" and not TRACE_MARKER_PATH.is_file():
         return
-    message = usage_banner(event, "Summarizing") or FALLBACK_COMPACT_BODY
+
+    record = {
+        "phase": "peon",
+        "type": event.get("hook_event_name"),
+        "hasTitle": bool(str(event.get("title") or "").strip()),
+        "hasWorkspace": bool(str(event.get("cwd") or "").strip()),
+    }
     try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        prune_stale_entries()
-        with open(path, "w") as handle:
-            handle.write(message + "\n")
+        TRACE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with TRACE_LOG_PATH.open("a", encoding="utf-8") as trace_log:
+            trace_log.write(TRACE_PREFIX + " " + json.dumps(record) + "\n")
     except OSError:
         pass
 
@@ -120,8 +126,9 @@ def send_after_compact(event, message):
     if not os.path.isfile(script):
         return
     env.update({"PEON_SYNC": "1", "PEON_PLATFORM": "mac"})
+    color = "red" if event.get("hook_event_name") == "PreCompact" else "blue"
     subprocess.run(
-        ["bash", script, message, title, "blue"],
+        ["bash", script, message, title, color],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -133,11 +140,13 @@ def send_after_compact(event, message):
 def handle_event(event, peon_runner=None, banner_sender=None):
     payload = dict(event)
     payload["source"] = "opencode"
+    trace_peon_event(payload)
     name = payload.get("hook_event_name")
     if name == "PreCompact":
-        store_compact_body(payload)
-        runner = peon_runner or run_peon
-        return runner(payload)
+        message = usage_banner(payload, "Summarizing") or FALLBACK_COMPACT_BODY
+        sender = banner_sender or send_after_compact
+        sender(payload, message)
+        return 0
     if name == "PostCompact":
         message = usage_banner(payload, "Done summarizing") or "Done summarizing this chat"
         sender = banner_sender or send_after_compact

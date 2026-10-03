@@ -110,6 +110,7 @@ echo "== install OpenCode V2 plugin =="
 mkdir -p "$DEST/opencode"
 cp "$REPO_DIR/opencode/index.ts" "$DEST/opencode/index.ts"
 cp "$REPO_DIR/opencode/events.mjs" "$DEST/opencode/events.mjs"
+cp "$REPO_DIR/opencode/usage.mjs" "$DEST/opencode/usage.mjs"
 python3 "$REPO_DIR/install_opencode_plugin.py" "$OPENCODE_CONFIG_JSON" "$DEST/opencode"
 
 echo "== agent skills =="

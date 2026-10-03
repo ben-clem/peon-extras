@@ -377,36 +377,119 @@ class OpenCodePluginInstallerTests(unittest.TestCase):
             install_opencode_plugin.merge(merged, "/runtime/opencode"), merged
         )
 
-    def test_precompact_event_caches_usage_banner_and_runs_peon(self):
-        with tempfile.TemporaryDirectory() as directory:
-            compact_file = Path(directory, "compact-body-sesabc")
-            emitted = []
-            event = {
-                "hook_event_name": "PreCompact",
-                "session_id": "ses_abc",
-                "cwd": "/work/repo",
-                "title": "Review",
-                "context_tokens": 90_000,
-                "context_window_size": 100_000,
-            }
-            with (
-                patch.object(opencode_hook, "CACHE_DIR", directory),
-                patch.object(
-                    opencode_hook, "cache_path", return_value=str(compact_file)
+    def test_compaction_events_keep_banners_without_running_peon(self):
+        banners = []
+        peon_events = []
+        before = {
+            "hook_event_name": "PreCompact",
+            "session_id": "ses_abc",
+            "cwd": "/work/repo",
+            "title": "Review",
+            "context_tokens": 90_000,
+            "context_window_size": 100_000,
+        }
+        after = {
+            **before,
+            "hook_event_name": "PostCompact",
+            "context_tokens": 12_000,
+        }
+        send_banner = lambda payload, message: banners.append(
+            (payload["hook_event_name"], payload["source"], message)
+        )
+        run_peon = lambda payload: peon_events.append(payload) or 0
+
+        before_result = opencode_hook.handle_event(
+            before, peon_runner=run_peon, banner_sender=send_banner
+        )
+        after_result = opencode_hook.handle_event(
+            after, peon_runner=run_peon, banner_sender=send_banner
+        )
+
+        self.assertEqual((before_result, after_result), (0, 0))
+        self.assertEqual(
+            banners,
+            [
+                (
+                    "PreCompact",
+                    "opencode",
+                    "Summarizing: 90K / 100K Tokens (90% Full)",
                 ),
-                patch.object(opencode_hook, "prune_stale_entries"),
+                (
+                    "PostCompact",
+                    "opencode",
+                    "Done summarizing: 12K / 100K Tokens (12% Full)",
+                ),
+            ],
+        )
+        self.assertEqual(peon_events, [])
+
+    def test_post_compact_banner_uses_standard_usage_wording_for_summary_output(self):
+        banners = []
+        result = opencode_hook.handle_event(
+            {
+                "hook_event_name": "PostCompact",
+                "context_tokens": 96,
+                "context_window_size": 175_000,
+            },
+            banner_sender=lambda _payload, message: banners.append(message),
+        )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            banners,
+            ["Done summarizing: 96 / 175K Tokens (0% Full)"],
+        )
+
+    def test_compaction_banner_color_tracks_before_and_after_stage(self):
+        with (
+            patch.object(opencode_hook, "prime_title", return_value="Review"),
+            patch.object(opencode_hook.os.path, "isfile", return_value=True),
+            patch.object(opencode_hook.subprocess, "run") as run,
+        ):
+            opencode_hook.handle_event(
+                {"hook_event_name": "PreCompact", "session_id": "ses_before"}
+            )
+            opencode_hook.handle_event(
+                {"hook_event_name": "PostCompact", "session_id": "ses_after"}
+            )
+
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual([command[-1] for command in commands], ["red", "blue"])
+
+    def test_trace_records_only_sanitized_peon_event_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory, "trace-enabled")
+            marker.touch()
+            trace_log = Path(directory, "trace.jsonl")
+            with (
+                patch.object(opencode_hook, "TRACE_MARKER_PATH", marker),
+                patch.object(opencode_hook, "TRACE_LOG_PATH", trace_log),
             ):
                 result = opencode_hook.handle_event(
-                    event, peon_runner=lambda payload: emitted.append(payload) or 0
+                    {
+                        "hook_event_name": "Stop",
+                        "session_id": "ses_sensitive",
+                        "cwd": "/work/repo",
+                        "title": "Review",
+                        "message": "this message must not be traced",
+                    },
+                    peon_runner=lambda _event: 0,
                 )
 
-            self.assertEqual(result, 0)
-            self.assertEqual(
-                compact_file.read_text(),
-                "Summarizing: 90K / 100K Tokens (90% Full)\n",
-            )
-            self.assertEqual(emitted[0]["source"], "opencode")
-            self.assertEqual(emitted[0]["session_id"], "ses_abc")
+            trace_line = trace_log.read_text()
+
+        record = json.loads(trace_line.split(opencode_hook.TRACE_PREFIX, 1)[1])
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            record,
+            {
+                "phase": "peon",
+                "type": "Stop",
+                "hasTitle": True,
+                "hasWorkspace": True,
+            },
+        )
+        self.assertNotIn("this message must not be traced", trace_line)
 
 
 if __name__ == "__main__":

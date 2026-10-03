@@ -56,6 +56,187 @@ test("child sessions do not send prompt-submit sounds", async () => {
   assert.deepEqual(emitted, [])
 })
 
+test("root worker sessions in the agent workspace do not send notifications", async () => {
+  const emitted = []
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    locationDirectory: "/work/agent",
+  })
+
+  await adapter.handle({
+    type: "session.created",
+    data: {
+      id: "ses_worker",
+      agent: "build",
+      title: "Background task",
+      location: { directory: "/work/agent" },
+    },
+  })
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_worker" },
+  })
+  await adapter.handle({
+    type: "session.execution.succeeded",
+    data: { sessionID: "ses_worker" },
+  })
+
+  assert.deepEqual(emitted, [])
+})
+
+test("cached child metadata is enriched before a completion can emit a banner", async () => {
+  const emitted = []
+  const lookups = []
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    getSession: async (sessionID) => {
+      lookups.push(sessionID)
+      return {
+        id: sessionID,
+        parentID: "ses_root",
+        title: "Child task",
+        location: { directory: "/work/repo" },
+      }
+    },
+  })
+
+  await adapter.handle({
+    type: "session.created",
+    data: {
+      id: "ses_child",
+      title: "Child task",
+      location: { directory: "/work/repo" },
+    },
+  })
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_child" },
+  })
+  await adapter.handle({
+    type: "session.execution.succeeded",
+    data: { sessionID: "ses_child" },
+  })
+
+  assert.deepEqual(lookups, ["ses_child"])
+  assert.deepEqual(emitted, [])
+})
+
+test("cached sparse session metadata is enriched before Peon events are emitted", async () => {
+  const emitted = []
+  const lookups = []
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    getMessages: async () => [
+      {
+        type: "assistant",
+        content: [{ type: "text", text: "Recovered task description." }],
+      },
+    ],
+    getSession: async (sessionID) => {
+      lookups.push(sessionID)
+      return {
+        id: sessionID,
+        title: "Recovered session title",
+        location: { directory: "/work/recovered" },
+      }
+    },
+  })
+
+  await adapter.handle({ type: "session.created", data: { id: "ses_root" } })
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_root" },
+  })
+  await adapter.handle({
+    type: "session.execution.succeeded",
+    data: { sessionID: "ses_root" },
+  })
+
+  assert.deepEqual(lookups, ["ses_root"])
+  assert.deepEqual(
+    emitted.map(({ hook_event_name, cwd, title, message }) => ({
+      hook_event_name,
+      cwd,
+      title,
+      message,
+    })),
+    [
+      {
+        hook_event_name: "UserPromptSubmit",
+        cwd: "/work/recovered",
+        title: "Recovered session title",
+        message: undefined,
+      },
+      {
+        hook_event_name: "Stop",
+        cwd: "/work/recovered",
+        title: "Recovered session title",
+        message: "Recovered task description.",
+      },
+    ],
+  )
+})
+
+test("completion event metadata refreshes a sparse session before emitting Stop", async () => {
+  const emitted = []
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    getSession: async (sessionID) => ({
+      id: sessionID,
+      title: "",
+      location: { directory: "/work/repo" },
+    }),
+    getMessages: async () => [],
+    locationDirectory: "/work/repo",
+  })
+
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_root" },
+  })
+  await adapter.handle({
+    type: "session.execution.succeeded",
+    data: {
+      sessionID: "ses_root",
+      title: "Generated session title",
+      location: { directory: "/work/repo" },
+    },
+  })
+
+  const stop = emitted.find((event) => event.hook_event_name === "Stop")
+  assert.equal(stop?.title, "Generated session title")
+})
+
+test("completion refreshes a cached session whose title was not ready at start", async () => {
+  const emitted = []
+  const lookups = []
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    getSession: async (sessionID) => {
+      lookups.push(sessionID)
+      return {
+        id: sessionID,
+        title: lookups.length === 1 ? "" : "Recovered session title",
+        location: { directory: "/work/repo" },
+      }
+    },
+    getMessages: async () => [],
+  })
+
+  await adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_root" },
+  })
+  await adapter.handle({
+    type: "session.execution.succeeded",
+    data: { sessionID: "ses_root" },
+  })
+
+  const stop = emitted.find((event) => event.hook_event_name === "Stop")
+  assert.equal(lookups.length, 2)
+  assert.equal(stop?.title, "Recovered session title")
+})
+
 test("each busy session transition sends a prompt-submit event", async () => {
   const emitted = []
   const adapter = createOpenCodeEventAdapter({ emit: (event) => emitted.push(event) })
@@ -409,5 +590,81 @@ test("compaction hooks send before and after Peon banner events", async () => {
         context_window_size: 100_000,
       },
     ],
+  )
+})
+
+test("successful completion closes a pending compaction without a compacted event", async () => {
+  const emitted = []
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    getCompactionUsage: async (_sessionID, _messages, stage) =>
+      stage === "before"
+        ? { context_tokens: 90_000, context_window_size: 100_000 }
+        : { context_tokens: 12_000, context_window_size: 100_000 },
+  })
+
+  await adapter.handle({
+    type: "session.created",
+    data: {
+      info: {
+        id: "ses_root",
+        title: "Quick check-in",
+        location: { directory: "/work/repo" },
+      },
+    },
+  })
+  await adapter.beforeCompaction({ sessionID: "ses_root", messages: [] })
+  await adapter.handle({
+    type: "session.execution.succeeded",
+    data: { sessionID: "ses_root" },
+  })
+
+  assert.deepEqual(
+    emitted.map(({ hook_event_name, context_tokens }) => ({ hook_event_name, context_tokens })),
+    [
+      { hook_event_name: "PreCompact", context_tokens: 90_000 },
+      { hook_event_name: "PostCompact", context_tokens: 12_000 },
+    ],
+  )
+})
+
+test("delayed execution metadata does not emit a prompt sound after compaction begins", async () => {
+  const emitted = []
+  let releaseInitialLookup
+  const initialLookup = new Promise((resolve) => {
+    releaseInitialLookup = resolve
+  })
+  let lookups = 0
+  const adapter = createOpenCodeEventAdapter({
+    emit: (event) => emitted.push(event),
+    getSession: async (sessionID) => {
+      lookups += 1
+      if (lookups === 1) return initialLookup
+      return {
+        id: sessionID,
+        title: "Quick check-in",
+        parentID: null,
+        location: { directory: "/work/repo" },
+      }
+    },
+  })
+
+  const started = adapter.handle({
+    type: "session.execution.started",
+    data: { sessionID: "ses_root" },
+  })
+  await Promise.resolve()
+  await adapter.beforeCompaction({ sessionID: "ses_root", messages: [] })
+  releaseInitialLookup({
+    id: "ses_root",
+    title: "Quick check-in",
+    parentID: null,
+    location: { directory: "/work/repo" },
+  })
+  await started
+
+  assert.deepEqual(
+    emitted.map(({ hook_event_name }) => hook_event_name),
+    ["PreCompact"],
   )
 })

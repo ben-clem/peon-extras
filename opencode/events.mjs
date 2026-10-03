@@ -1,4 +1,4 @@
-import { resolve } from "node:path"
+import { basename, resolve } from "node:path"
 
 function eventProperties(event) {
   if (event?.data && typeof event.data === "object") return event.data
@@ -21,11 +21,25 @@ function sessionInfoFrom(properties, event) {
 }
 
 function mergeSessionInfo(previous, current) {
+  const definedCurrent = Object.fromEntries(
+    Object.entries(current || {}).filter(([, value]) => value !== undefined),
+  )
+  const definedLocation = Object.fromEntries(
+    Object.entries(current?.location || {}).filter(([, value]) => value !== undefined),
+  )
   return {
     ...previous,
-    ...current,
-    location: { ...previous?.location, ...current?.location },
+    ...definedCurrent,
+    location: { ...previous?.location, ...definedLocation },
   }
+}
+
+function isSubagentSession(session) {
+  if (session?.parentID) return true
+
+  // ARO task-only workers are separate root sessions in a workspace named "agent".
+  const workspaceName = basename(session?.location?.directory || "").toLowerCase()
+  return workspaceName === "agent"
 }
 
 function assistantExcerpt(messages) {
@@ -96,27 +110,46 @@ export function createOpenCodeEventAdapter({
 }) {
   const expectedDirectory = locationDirectory ? resolve(locationDirectory) : null
   const sessions = new Map()
+  const resolvedSessions = new Set()
   const busySessions = new Set()
   const completedSessions = new Set()
   const failedSessions = new Set()
   const pendingQuestionIds = new Set()
   const pendingCompactions = new Set()
 
-  async function sessionFor(sessionID, event) {
+  async function sessionFor(sessionID, event, { refreshMissingTitle = false } = {}) {
+    const eventInfo = sessionInfoFrom(eventProperties(event), event)
+    if (eventInfo?.id) {
+      const session = mergeSessionInfo(sessions.get(sessionID), {
+        ...eventInfo,
+        id: eventInfo.id || sessionID,
+      })
+      sessions.set(sessionID, session)
+    }
+
     const cached = sessions.get(sessionID)
-    if (cached) return cached
-    if (!getSession) return null
+    const parentID = cached?.parentID
+    const hasKnownParent =
+      parentID === null || (typeof parentID === "string" && parentID.length > 0)
+    const hasSessionMetadata = Boolean(cached?.title && cached?.location?.directory)
+    const canUseCached =
+      cached && (resolvedSessions.has(sessionID) || (hasKnownParent && hasSessionMetadata))
+    if (canUseCached && !(refreshMissingTitle && !cached.title)) {
+      return cached
+    }
+    if (!getSession) return cached || null
 
     try {
       const result = await getSession(sessionID)
       const properties = result?.data && typeof result.data === "object" ? result.data : result
-      if (!properties || typeof properties !== "object") return null
+      if (!properties || typeof properties !== "object") return cached || null
       const info = sessionInfoFrom(properties, event) || { id: sessionID }
-      const session = mergeSessionInfo(null, { ...info, id: info.id || sessionID })
+      const session = mergeSessionInfo(cached, { ...info, id: info.id || sessionID })
       sessions.set(sessionID, session)
+      resolvedSessions.add(sessionID)
       return session
     } catch {
-      return null
+      return cached || null
     }
   }
 
@@ -134,7 +167,7 @@ export function createOpenCodeEventAdapter({
 
   async function sessionFailed(sessionID, properties, event) {
     const session = await sessionFor(sessionID, event)
-    if (session?.parentID) return
+    if (isSubagentSession(session)) return
     busySessions.delete(sessionID)
     completedSessions.add(sessionID)
     failedSessions.add(sessionID)
@@ -150,9 +183,23 @@ export function createOpenCodeEventAdapter({
   }
 
   async function sessionCompleted(sessionID, event) {
-    const session = await sessionFor(sessionID, event)
-    if (session?.parentID) return
+    const session = await sessionFor(sessionID, event, { refreshMissingTitle: true })
+    if (isSubagentSession(session)) return
     busySessions.delete(sessionID)
+    if (pendingCompactions.delete(sessionID)) {
+      completedSessions.add(sessionID)
+      const messages = getMessages ? await getMessages(sessionID) : []
+      const usage = getCompactionUsage
+        ? await getCompactionUsage(sessionID, messages, "after")
+        : {}
+      await emit(
+        eventPayload("PostCompact", session, {
+          session_id: sessionID,
+          ...usage,
+        }),
+      )
+      return
+    }
     if (failedSessions.delete(sessionID)) {
       completedSessions.add(sessionID)
       return
@@ -172,7 +219,7 @@ export function createOpenCodeEventAdapter({
     const sessionID = event?.sessionID
     if (!sessionID) return
     const session = await sessionFor(sessionID, event)
-    if (session?.parentID) return
+    if (isSubagentSession(session)) return
     pendingCompactions.add(sessionID)
     const usage = getCompactionUsage
       ? await getCompactionUsage(sessionID, event.messages || [], "before")
@@ -205,7 +252,8 @@ export function createOpenCodeEventAdapter({
         completedSessions.delete(sessionID)
         failedSessions.delete(sessionID)
         const session = await sessionFor(sessionID, event)
-        if (session?.parentID) return
+        if (isSubagentSession(session)) return
+        if (pendingCompactions.has(sessionID)) return
         await emit(eventPayload("UserPromptSubmit", session, { session_id: sessionID }))
         return
       }
@@ -222,7 +270,8 @@ export function createOpenCodeEventAdapter({
       completedSessions.delete(sessionID)
       failedSessions.delete(sessionID)
       const session = await sessionFor(sessionID, event)
-      if (session?.parentID) return
+      if (isSubagentSession(session)) return
+      if (pendingCompactions.has(sessionID)) return
       await emit(eventPayload("UserPromptSubmit", session, { session_id: sessionID }))
       return
     }
@@ -245,7 +294,7 @@ export function createOpenCodeEventAdapter({
       const sessionID = properties.sessionID
       if (!sessionID || !pendingCompactions.delete(sessionID)) return
       const session = await sessionFor(sessionID, event)
-      if (session?.parentID) return
+      if (isSubagentSession(session)) return
       const usage = getCompactionUsage
         ? await getCompactionUsage(sessionID, properties.messages || [], "after")
         : {}
@@ -256,7 +305,7 @@ export function createOpenCodeEventAdapter({
     if (event?.type === "permission.asked") {
       const sessionID = properties.sessionID
       const session = sessionID ? await sessionFor(sessionID, event) : null
-      if (session?.parentID) return
+      if (isSubagentSession(session)) return
       await emit(
         eventPayload("PermissionRequest", session, {
           session_id: sessionID || "",
@@ -269,7 +318,7 @@ export function createOpenCodeEventAdapter({
     if (event?.type === "question.asked" || event?.type === "question.v2.asked") {
       const sessionID = properties.sessionID
       const session = sessionID ? await sessionFor(sessionID, event) : null
-      if (session?.parentID) return
+      if (isSubagentSession(session)) return
       const requestID = properties.id
       if (typeof requestID !== "string" || pendingQuestionIds.has(requestID)) return
       if (pendingQuestionIds.size >= 100) {
