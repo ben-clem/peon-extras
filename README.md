@@ -14,6 +14,18 @@ submit. "C'est fait!" when the job is done.
 
 This is not a fork. Install peon-ping first.
 
+## Harnesses
+
+- **Cursor**: hooks in `~/.cursor/hooks.json`. Also on Windows; see
+  [Windows](#windows).
+- **Codex** (CLI and Desktop): hooks in `~/.codex/hooks.json`, alongside
+  PeonPing's packaged Codex adapter. See [Codex events](#codex-events).
+- **OpenCode** (V2): a plugin that listens to OpenCode's event stream. See
+  [OpenCode events](#opencode-events).
+
+One `./install.sh` sets up all three on macOS. They share the overlay, the
+banner titles, and the compaction banners.
+
 ## Install
 
 Install Homebrew [peon-ping](https://github.com/PeonPing/homebrew-tap) and run
@@ -123,14 +135,18 @@ failed lookups fall back to the working-directory name. Compaction counts come
 from the latest token-count record near the end of the transcript. If an
 internal format changes, notifications still fire with fallback copy.
 
-## OpenCode V2 events
+## OpenCode events
 
-The V2 plugin listens to OpenCode's event stream and maps root-session events to
-PeonPing notifications. Child sessions are suppressed. It covers prompt
-submissions (including the first prompt in a session), completion with the
-latest assistant excerpt, questions, permission requests, errors, and
-before/after compaction banners. Compaction
-usage is estimated from the latest assistant token count and the active model's
+The OpenCode V2 plugin listens to OpenCode's event stream and maps root-session
+events to PeonPing notifications. Child sessions stay silent. It covers:
+
+- prompt submit;
+- completion, with the latest assistant excerpt;
+- questions, showing the first question;
+- permission requests and errors;
+- before/after compaction banners.
+
+Compaction usage is estimated from the latest assistant token count and the active model's
 context window. The shared title helper combines OpenCode's session title and
 working directory into the banner title; the installer configures PeonPing to
 use that helper while retaining Cursor and Codex title lookup. The plugin is installed under
