@@ -1,6 +1,6 @@
 # peon-extras
 
-Unofficial Cursor and OpenAI Codex extras for
+Unofficial Cursor, OpenAI Codex, and OpenCode extras for
 [peon-ping](https://github.com/PeonPing/peon-ping).
 
 [peon-ping](https://peonping.com) already pings you when an agent starts,
@@ -37,8 +37,15 @@ The installer:
 - installs shared runtime scripts under `~/.local/share/peon-extras/`;
 - merges Cursor hooks into `~/.cursor/hooks.json`;
 - merges Codex hooks into `~/.codex/hooks.json`;
+- installs and registers the OpenCode V2 plugin in `~/.config/opencode/opencode.json`;
 - installs the maintenance skill for both Cursor and Codex;
 - rebuilds the macOS overlay and selects `peasant_fr`.
+
+The OpenCode installer adds the local plugin path to the `plugins` array. It
+preserves other JSON settings and plugin entries, and does not edit
+`opencode.jsonc`. Set `XDG_CONFIG_HOME` to use a different OpenCode config
+directory. OpenCode V2 loads the plugin on startup; restart a running OpenCode
+process after installing or updating it.
 
 When the installer changes a Codex hook definition, run `codex` in a terminal,
 enter `/hooks`, and trust the new or changed user hooks. The Codex Desktop
@@ -115,6 +122,19 @@ tasks use `Recents`; named projects use their Codex project name. CLI tasks and
 failed lookups fall back to the working-directory name. Compaction counts come
 from the latest token-count record near the end of the transcript. If an
 internal format changes, notifications still fire with fallback copy.
+
+## OpenCode V2 events
+
+The V2 plugin listens to OpenCode's event stream and maps root-session events to
+PeonPing notifications. Child sessions are suppressed. It covers session start,
+prompt submit, completion with the latest assistant excerpt, questions,
+permission requests, errors, and before/after compaction banners. Compaction
+usage is estimated from the latest assistant token count and the active model's
+context window. The shared title helper combines OpenCode's session title and
+working directory into the banner title; the installer configures PeonPing to
+use that helper while retaining Cursor and Codex title lookup. The plugin is installed under
+`~/.local/share/peon-extras/opencode/`; its Python bridge calls the existing
+PeonPing runtime under `~/.claude/hooks/peon-ping/`.
 
 ## Overlay on macOS 26
 

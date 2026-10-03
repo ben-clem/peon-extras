@@ -15,10 +15,43 @@ sys.path.insert(0, str(REPO))
 
 import codex_hook
 import install_codex_hooks
+import install_opencode_plugin
+import opencode_hook
 import notification_title
 
 
 class NotificationTitleTests(unittest.TestCase):
+    def test_opencode_title_uses_session_title_from_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache_file = Path(directory, "banner-title-sesabc")
+            stdout = io.StringIO()
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "PEON_IDE": "opencode",
+                        "PEON_SESSION_ID": "ses_abc",
+                        "PEON_CWD": "/work/peon-extras",
+                        "PEON_CHAT_TITLE": "Review the new adapter",
+                    },
+                ),
+                patch.object(notification_title, "CACHE_DIR", directory),
+                patch.object(
+                    notification_title,
+                    "cache_path",
+                    return_value=str(cache_file),
+                ),
+                patch.object(notification_title, "prune_stale_entries"),
+                redirect_stdout(stdout),
+            ):
+                result = notification_title.main()
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                stdout.getvalue(),
+                "OpenCode > peon-extras > Review the new adapter\n",
+            )
+
     def make_codex_state(self, path, project_id=None, project_name=None, source="vscode"):
         connection = sqlite3.connect(path)
         connection.executescript(
@@ -316,6 +349,64 @@ class CodexHookInstallerTests(unittest.TestCase):
             merged["hooks"]["SessionEnd"][-1]["hooks"][0]["timeout"], 3
         )
         self.assertEqual(merged["description"], "mine")
+
+
+class OpenCodePluginInstallerTests(unittest.TestCase):
+    def test_merge_preserves_existing_plugins_and_is_idempotent(self):
+        original = {
+            "$schema": "https://opencode.ai/config.json",
+            "plugins": ["-opencode.provider.vllm", "existing-plugin"],
+            "mcp": {"servers": {"docs": {"type": "remote"}}},
+        }
+
+        merged = install_opencode_plugin.merge(original, "/runtime/opencode")
+
+        self.assertEqual(
+            merged,
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "plugins": [
+                    "-opencode.provider.vllm",
+                    "existing-plugin",
+                    "/runtime/opencode",
+                ],
+                "mcp": {"servers": {"docs": {"type": "remote"}}},
+            },
+        )
+        self.assertEqual(
+            install_opencode_plugin.merge(merged, "/runtime/opencode"), merged
+        )
+
+    def test_precompact_event_caches_usage_banner_and_runs_peon(self):
+        with tempfile.TemporaryDirectory() as directory:
+            compact_file = Path(directory, "compact-body-sesabc")
+            emitted = []
+            event = {
+                "hook_event_name": "PreCompact",
+                "session_id": "ses_abc",
+                "cwd": "/work/repo",
+                "title": "Review",
+                "context_tokens": 90_000,
+                "context_window_size": 100_000,
+            }
+            with (
+                patch.object(opencode_hook, "CACHE_DIR", directory),
+                patch.object(
+                    opencode_hook, "cache_path", return_value=str(compact_file)
+                ),
+                patch.object(opencode_hook, "prune_stale_entries"),
+            ):
+                result = opencode_hook.handle_event(
+                    event, peon_runner=lambda payload: emitted.append(payload) or 0
+                )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                compact_file.read_text(),
+                "Summarizing: 90K / 100K Tokens (90% Full)\n",
+            )
+            self.assertEqual(emitted[0]["source"], "opencode")
+            self.assertEqual(emitted[0]["session_id"], "ses_abc")
 
 
 if __name__ == "__main__":
