@@ -93,12 +93,9 @@ export function createOpenCodeEventAdapter({
   getMessages,
   getCompactionUsage,
   locationDirectory,
-  now = Date.now,
 }) {
   const expectedDirectory = locationDirectory ? resolve(locationDirectory) : null
   const sessions = new Map()
-  const startedSessions = new Set()
-  const sessionStartedAt = new Map()
   const busySessions = new Set()
   const completedSessions = new Set()
   const failedSessions = new Set()
@@ -192,21 +189,6 @@ export function createOpenCodeEventAdapter({
       if (info?.id) {
         const session = mergeSessionInfo(sessions.get(info.id), info)
         sessions.set(info.id, session)
-        if (
-          event.type === "session.created" &&
-          !session.parentID &&
-          !startedSessions.has(session.id)
-        ) {
-          startedSessions.add(session.id)
-          sessionStartedAt.set(session.id, now())
-          await emit({
-            hook_event_name: "SessionStart",
-            session_id: session.id,
-            cwd: session.location?.directory || "",
-            title: session.title || "",
-            source: "opencode",
-          })
-        }
       }
       return
     }
@@ -224,7 +206,6 @@ export function createOpenCodeEventAdapter({
         failedSessions.delete(sessionID)
         const session = await sessionFor(sessionID, event)
         if (session?.parentID) return
-        if (now() - (sessionStartedAt.get(sessionID) || 0) <= 3_000) return
         await emit(eventPayload("UserPromptSubmit", session, { session_id: sessionID }))
         return
       }
